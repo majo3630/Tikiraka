@@ -1,4 +1,614 @@
-<script>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tikiraka - Gestión e Inventario</title>
+    <!-- Chart.js para gráficas -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- SDKs de Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --primary: #d96b1a; /* Naranja Tikiraka */
+            --primary-hover: #b8540f;
+            --text-color: #ffffff;
+            --text-secondary: #b0b0b0;
+            --border-color: #333333;
+            --success: #2e7d32;
+            --danger: #c62828;
+            --warning: #f57c00;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            padding-bottom: 75px;
+        }
+
+        header {
+            background-color: #000000;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 2px solid var(--primary);
+        }
+
+        header h1 {
+            color: var(--primary);
+            font-size: 1.5rem;
+            letter-spacing: 2px;
+        }
+
+        .header-logo {
+            width: 45px;
+            height: 45px;
+            object-fit: contain;
+            border-radius: 5px;
+        }
+
+        nav {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            background-color: #000000;
+            display: flex;
+            justify-content: space-around;
+            border-top: 1px solid var(--border-color);
+            z-index: 1000;
+        }
+
+        nav button {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            padding: 12px 5px;
+            font-size: 0.75rem;
+            flex-grow: 1;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        nav button.active {
+            color: var(--primary);
+            font-weight: bold;
+            border-top: 3px solid var(--primary);
+        }
+
+        .container {
+            padding: 15px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border: 1px solid var(--border-color);
+        }
+
+        .card h2, .card h3 {
+            color: var(--primary);
+            margin-bottom: 12px;
+        }
+
+        input, select, textarea, button.btn {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            background-color: #2a2a2a;
+            color: var(--text-color);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+
+        button.btn {
+            background-color: var(--primary);
+            color: white;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+        }
+
+        button.btn:hover {
+            background-color: var(--primary-hover);
+        }
+
+        button.btn-danger {
+            background-color: var(--danger);
+        }
+
+        button.btn-warning {
+            background-color: var(--warning);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            margin-top: 5px;
+            margin-bottom: 10px;
+        }
+
+        .btn-group button {
+            margin-bottom: 0;
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 0.85rem;
+        }
+
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: #111;
+            color: var(--primary);
+        }
+
+        .img-thumb {
+            width: 40px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: 5px;
+        }
+
+        .balance-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .balance-box {
+            background-color: #111;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            border-left: 4px solid var(--primary);
+        }
+
+        .balance-box.total-box {
+            background-color: #1a1500;
+            border-left: 4px solid #ffd700;
+            margin-bottom: 12px;
+        }
+
+        .balance-box.total-box h4 {
+            color: #ffd700;
+        }
+
+        .balance-box.total-box p {
+            font-size: 1.5rem;
+            color: #ffd700;
+        }
+
+        .balance-box h4 {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .balance-box p {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .socio-header, .collapsible-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .collapsible-header {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .collapsible-header h2 {
+            margin-bottom: 0;
+        }
+
+        .collapsible-content {
+            display: none;
+            margin-top: 15px;
+        }
+
+        .base-caja-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            width: auto;
+            margin-bottom: 0;
+        }
+
+        .hint-text {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: -5px;
+            margin-bottom: 10px;
+        }
+
+        /* MODALES */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.8);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: var(--card-bg);
+            padding: 20px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 500px;
+            border: 1px solid var(--border-color);
+        }
+
+        .action-btns {
+            display: flex;
+            gap: 5px;
+        }
+
+        .action-btns button {
+            width: auto;
+            padding: 5px 8px;
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>TIKIRAKA</h1>
+        <img src="logo.png" alt="Tikiraka Logo" class="header-logo" onerror="this.style.display='none'">
+    </header>
+
+    <div class="container">
+        
+        <!-- INVENTARIO -->
+        <section id="tab-inventario" class="tab-content active">
+            <div class="card">
+                <h2>Agregar Producto</h2>
+                <input type="text" id="prod-nombre" placeholder="Nombre del Producto">
+                <input type="number" id="prod-cantidad" placeholder="Cantidad Inicial">
+                <input type="number" id="prod-costo" placeholder="Costo de Compra ($)">
+                <input type="number" id="prod-precio" placeholder="Precio de Venta ($)">
+                <input type="file" id="prod-foto" accept="image/*">
+                <button class="btn" onclick="agregarProducto()">Guardar Producto</button>
+            </div>
+
+            <div class="card">
+                <h2>Inventario Actual</h2>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Foto</th>
+                                <th>Nombre</th>
+                                <th>Stock</th>
+                                <th>Venta</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-inventario"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- CAJA REGISTRADORA -->
+        <section id="tab-caja" class="tab-content">
+            <div class="card">
+                <h2>Caja Registradora</h2>
+                
+                <div class="balance-box total-box">
+                    <h4>Dinero Total en Caja (Efectivo + Nequi)</h4>
+                    <p id="total-general">$ 0</p>
+                </div>
+
+                <div class="balance-grid">
+                    <div class="balance-box">
+                        <h4>Efectivo Total</h4>
+                        <p id="total-efectivo">$ 0</p>
+                    </div>
+                    <div class="balance-box">
+                        <h4>Nequi Total</h4>
+                        <p id="total-nequi">$ 0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ajustar Base Inicial -->
+            <div class="card">
+                <div class="collapsible-header" onclick="toggleBasePanel()">
+                    <h2>Ajustar / Modificar Saldo Base</h2>
+                    <span id="base-toggle-icon" style="color:var(--primary); font-weight:bold;">▼</span>
+                </div>
+                <div id="base-collapsible-content" class="collapsible-content">
+                    <div class="base-caja-grid">
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--text-secondary);">Efectivo ($):</label>
+                            <input type="number" id="base-efectivo" placeholder="Monto ($)">
+                            <div class="btn-group">
+                                <button class="btn" onclick="modificarSaldoBase('efectivo', 'fijar')">Fijar</button>
+                                <button class="btn" style="background-color:#2e7d32;" onclick="modificarSaldoBase('efectivo', 'sumar')">+</button>
+                                <button class="btn btn-danger" onclick="modificarSaldoBase('efectivo', 'restar')">-</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--text-secondary);">Nequi ($):</label>
+                            <input type="number" id="base-nequi" placeholder="Monto ($)">
+                            <div class="btn-group">
+                                <button class="btn" onclick="modificarSaldoBase('nequi', 'fijar')">Fijar</button>
+                                <button class="btn" style="background-color:#2e7d32;" onclick="modificarSaldoBase('nequi', 'sumar')">+</button>
+                                <button class="btn btn-danger" onclick="modificarSaldoBase('nequi', 'restar')">-</button>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="hint-text">Usa 'Fijar' para reemplazar el total, '+' para agregar o '-' para disminuir el saldo actual.</p>
+                    
+                    <hr style="border-color: var(--border-color); margin: 15px 0;">
+                    
+                    <h3 style="font-size:1rem; color:var(--primary); margin-bottom:8px;">Historial de Cambios en la Base</h3>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Fecha/Hora</th>
+                                    <th>Caja</th>
+                                    <th>Acción</th>
+                                    <th>Monto</th>
+                                    <th>Saldo Final</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabla-historial-base"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Registrar Operación</h2>
+                <select id="tipo-operacion" onchange="toggleOperacion()">
+                    <option value="venta">Venta</option>
+                    <option value="gasto">Gasto / Compra</option>
+                </select>
+
+                <!-- Formulario Venta -->
+                <div id="form-venta">
+                    <select id="venta-producto" onchange="autofillPrecioVenta()"></select>
+                    <input type="number" id="venta-cantidad" placeholder="Cantidad vendida" value="1" oninput="autofillPrecioVenta()">
+                    <label style="font-size:0.8rem; color:var(--text-secondary);">Precio Final de Venta ($) - Modificable / Descuento:</label>
+                    <input type="number" id="venta-monto" placeholder="Monto total ($)">
+                </div>
+
+                <!-- Formulario Gasto / Compra Stock -->
+                <div id="form-gasto" style="display:none;">
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="gasto-es-stock" onchange="toggleGastoStock()">
+                        <label for="gasto-es-stock">¿Es una compra de stock / mercadería?</label>
+                    </div>
+
+                    <div id="gasto-simple-fields">
+                        <input type="text" id="gasto-concepto" placeholder="Concepto del gasto o compra">
+                    </div>
+
+                    <div id="gasto-stock-fields" style="display:none;">
+                        <select id="gasto-producto" onchange="autofillCostoGasto()"></select>
+                        <input type="number" id="gasto-cantidad-stock" placeholder="Cantidad de unidades compradas" value="1" oninput="autofillCostoGasto()">
+                    </div>
+
+                    <input type="number" id="gasto-monto" placeholder="Monto total pagado ($)">
+                </div>
+
+                <select id="metodo-pago">
+                    <option value="Efectivo">Efectivo</option>
+                    <option value="Nequi">Nequi</option>
+                </select>
+
+                <button class="btn" onclick="procesarOperacion()">Registrar Movimiento</button>
+            </div>
+        </section>
+
+        <!-- HISTORIAL -->
+        <section id="tab-historial" class="tab-content">
+            <div class="card">
+                <h2>Historial Mensual</h2>
+                <select id="filtro-mes" onchange="cargarHistorial()"></select>
+            </div>
+
+            <div class="card">
+                <h3>Ventas Realizadas</h3>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Producto</th>
+                                <th>Cant.</th>
+                                <th>Total</th>
+                                <th>Método</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-historial-ventas"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Gastos y Compras</h3>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Concepto</th>
+                                <th>Monto</th>
+                                <th>Método</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-historial-gastos"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- GRÁFICAS -->
+        <section id="tab-graficas" class="tab-content">
+            <div class="card">
+                <h3>Productos Más Vendidos</h3>
+                <canvas id="chartProductos"></canvas>
+            </div>
+            <div class="card">
+                <h3>Ventas por Día (Mes Actual)</h3>
+                <canvas id="chartVentasDia"></canvas>
+            </div>
+            <div class="card">
+                <h3>Ventas, Gastos y Ganancias</h3>
+                <canvas id="chartFinanzas"></canvas>
+            </div>
+            <div class="card">
+                <h3>Asistencia por Socio (Días Totales)</h3>
+                <canvas id="chartAsistencia"></canvas>
+            </div>
+        </section>
+
+        <!-- SOCIOS -->
+        <section id="tab-socios" class="tab-content">
+            <div class="card">
+                <h2>Gestión de Socios</h2>
+                <input type="text" id="socio-nombre" placeholder="Nombre del Socio">
+                <button class="btn" onclick="agregarSocio()">Agregar Socio</button>
+            </div>
+
+            <div id="lista-socios"></div>
+        </section>
+
+    </div>
+
+    <!-- MODAL EDITAR PRODUCTO -->
+    <div id="modal-editar" class="modal">
+        <div class="modal-content">
+            <h2 style="color:var(--primary); margin-bottom:15px;">Editar Producto</h2>
+            <input type="hidden" id="edit-prod-id">
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Nombre:</label>
+            <input type="text" id="edit-prod-nombre">
+            
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Stock / Cantidad:</label>
+            <input type="number" id="edit-prod-cantidad">
+            
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Costo de Compra ($):</label>
+            <input type="number" id="edit-prod-costo">
+            
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Precio de Venta ($):</label>
+            <input type="number" id="edit-prod-precio">
+            
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Cambiar Foto (Opcional):</label>
+            <input type="file" id="edit-prod-foto" accept="image/*">
+
+            <div class="btn-group">
+                <button class="btn" onclick="guardarEdicionProducto()">Guardar Cambios</button>
+                <button class="btn btn-danger" onclick="cerrarModalEditar()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL EDITAR VENTA -->
+    <div id="modal-editar-venta" class="modal">
+        <div class="modal-content">
+            <h2 style="color:var(--primary); margin-bottom:15px;">Editar Venta Registrada</h2>
+            <input type="hidden" id="edit-venta-id">
+            
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Producto:</label>
+            <select id="edit-venta-producto" onchange="autofillEditVentaPrecio()"></select>
+            
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Cantidad Vendida:</label>
+            <input type="number" id="edit-venta-cantidad" oninput="autofillEditVentaPrecio()">
+            
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Monto Total de Venta ($):</label>
+            <input type="number" id="edit-venta-monto">
+
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Método de Pago:</label>
+            <select id="edit-venta-metodo">
+                <option value="Efectivo">Efectivo</option>
+                <option value="Nequi">Nequi</option>
+            </select>
+
+            <div class="btn-group">
+                <button class="btn" onclick="guardarEdicionVenta()">Guardar Cambios</button>
+                <button class="btn btn-danger" onclick="cerrarModalEditarVenta()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NAVEGACIÓN -->
+    <nav>
+        <button class="nav-btn active" onclick="cambiarTab('tab-inventario', this)">Inventario</button>
+        <button class="nav-btn" onclick="cambiarTab('tab-caja', this)">Caja</button>
+        <button class="nav-btn" onclick="cambiarTab('tab-historial', this)">Historial</button>
+        <button class="nav-btn" onclick="cambiarTab('tab-graficas', this)">Gráficas</button>
+        <button class="nav-btn" onclick="cambiarTab('tab-socios', this)">Socios</button>
+    </nav>
+
+    <script>
     // CONFIGURACIÓN DE FIREBASE
     const firebaseConfig = {
         apiKey: "AIzaSyA84D05AYtM7TTHFxPTT-_b3LojUqYMP08",
@@ -938,4 +1548,6 @@
     document.addEventListener('DOMContentLoaded', inicio);
     // Por si el script se carga después de que el DOM ya estaba listo:
     if (document.readyState !== 'loading') inicio();
-</script>
+    </script>
+</body>
+</html>
