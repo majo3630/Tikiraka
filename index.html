@@ -1,0 +1,1553 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tikiraka - Gestión e Inventario</title>
+    <!-- Chart.js para gráficas -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- SDKs de Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --primary: #d96b1a; /* Naranja Tikiraka */
+            --primary-hover: #b8540f;
+            --text-color: #ffffff;
+            --text-secondary: #b0b0b0;
+            --border-color: #333333;
+            --success: #2e7d32;
+            --danger: #c62828;
+            --warning: #f57c00;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            padding-bottom: 75px;
+        }
+
+        header {
+            background-color: #000000;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 2px solid var(--primary);
+        }
+
+        header h1 {
+            color: var(--primary);
+            font-size: 1.5rem;
+            letter-spacing: 2px;
+        }
+
+        .header-logo {
+            width: 45px;
+            height: 45px;
+            object-fit: contain;
+            border-radius: 5px;
+        }
+
+        nav {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            background-color: #000000;
+            display: flex;
+            justify-content: space-around;
+            border-top: 1px solid var(--border-color);
+            z-index: 1000;
+        }
+
+        nav button {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            padding: 12px 5px;
+            font-size: 0.75rem;
+            flex-grow: 1;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        nav button.active {
+            color: var(--primary);
+            font-weight: bold;
+            border-top: 3px solid var(--primary);
+        }
+
+        .container {
+            padding: 15px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border: 1px solid var(--border-color);
+        }
+
+        .card h2, .card h3 {
+            color: var(--primary);
+            margin-bottom: 12px;
+        }
+
+        input, select, textarea, button.btn {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            background-color: #2a2a2a;
+            color: var(--text-color);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+
+        button.btn {
+            background-color: var(--primary);
+            color: white;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+        }
+
+        button.btn:hover {
+            background-color: var(--primary-hover);
+        }
+
+        button.btn-danger {
+            background-color: var(--danger);
+        }
+
+        button.btn-warning {
+            background-color: var(--warning);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            margin-top: 5px;
+            margin-bottom: 10px;
+        }
+
+        .btn-group button {
+            margin-bottom: 0;
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 0.85rem;
+        }
+
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: #111;
+            color: var(--primary);
+        }
+
+        .img-thumb {
+            width: 40px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: 5px;
+        }
+
+        .balance-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .balance-box {
+            background-color: #111;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            border-left: 4px solid var(--primary);
+        }
+
+        .balance-box.total-box {
+            background-color: #1a1500;
+            border-left: 4px solid #ffd700;
+            margin-bottom: 12px;
+        }
+
+        .balance-box.total-box h4 {
+            color: #ffd700;
+        }
+
+        .balance-box.total-box p {
+            font-size: 1.5rem;
+            color: #ffd700;
+        }
+
+        .balance-box h4 {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .balance-box p {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .socio-header, .collapsible-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .collapsible-header {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .collapsible-header h2 {
+            margin-bottom: 0;
+        }
+
+        .collapsible-content {
+            display: none;
+            margin-top: 15px;
+        }
+
+        .base-caja-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            width: auto;
+            margin-bottom: 0;
+        }
+
+        .hint-text {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: -5px;
+            margin-bottom: 10px;
+        }
+
+        /* MODALES */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.8);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: var(--card-bg);
+            padding: 20px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 500px;
+            border: 1px solid var(--border-color);
+        }
+
+        .action-btns {
+            display: flex;
+            gap: 5px;
+        }
+
+        .action-btns button {
+            width: auto;
+            padding: 5px 8px;
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>TIKIRAKA</h1>
+        <img src="logo.png" alt="Tikiraka Logo" class="header-logo" onerror="this.style.display='none'">
+    </header>
+
+    <div class="container">
+        
+        <!-- INVENTARIO -->
+        <section id="tab-inventario" class="tab-content active">
+            <div class="card">
+                <h2>Agregar Producto</h2>
+                <input type="text" id="prod-nombre" placeholder="Nombre del Producto">
+                <input type="number" id="prod-cantidad" placeholder="Cantidad Inicial">
+                <input type="number" id="prod-costo" placeholder="Costo de Compra ($)">
+                <input type="number" id="prod-precio" placeholder="Precio de Venta ($)">
+                <input type="file" id="prod-foto" accept="image/*">
+                <button class="btn" onclick="agregarProducto()">Guardar Producto</button>
+            </div>
+
+            <div class="card">
+                <h2>Inventario Actual</h2>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Foto</th>
+                                <th>Nombre</th>
+                                <th>Stock</th>
+                                <th>Venta</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-inventario"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- CAJA REGISTRADORA -->
+        <section id="tab-caja" class="tab-content">
+            <div class="card">
+                <h2>Caja Registradora</h2>
+                
+                <div class="balance-box total-box">
+                    <h4>Dinero Total en Caja (Efectivo + Nequi)</h4>
+                    <p id="total-general">$ 0</p>
+                </div>
+
+                <div class="balance-grid">
+                    <div class="balance-box">
+                        <h4>Efectivo Total</h4>
+                        <p id="total-efectivo">$ 0</p>
+                    </div>
+                    <div class="balance-box">
+                        <h4>Nequi Total</h4>
+                        <p id="total-nequi">$ 0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ajustar Base Inicial -->
+            <div class="card">
+                <div class="collapsible-header" onclick="toggleBasePanel()">
+                    <h2>Ajustar / Modificar Saldo Base</h2>
+                    <span id="base-toggle-icon" style="color:var(--primary); font-weight:bold;">▼</span>
+                </div>
+                <div id="base-collapsible-content" class="collapsible-content">
+                    <div class="base-caja-grid">
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--text-secondary);">Efectivo ($):</label>
+                            <input type="number" id="base-efectivo" placeholder="Monto ($)">
+                            <div class="btn-group">
+                                <button class="btn" onclick="modificarSaldoBase('efectivo', 'fijar')">Fijar</button>
+                                <button class="btn" style="background-color:#2e7d32;" onclick="modificarSaldoBase('efectivo', 'sumar')">+</button>
+                                <button class="btn btn-danger" onclick="modificarSaldoBase('efectivo', 'restar')">-</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--text-secondary);">Nequi ($):</label>
+                            <input type="number" id="base-nequi" placeholder="Monto ($)">
+                            <div class="btn-group">
+                                <button class="btn" onclick="modificarSaldoBase('nequi', 'fijar')">Fijar</button>
+                                <button class="btn" style="background-color:#2e7d32;" onclick="modificarSaldoBase('nequi', 'sumar')">+</button>
+                                <button class="btn btn-danger" onclick="modificarSaldoBase('nequi', 'restar')">-</button>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="hint-text">Usa 'Fijar' para reemplazar el total, '+' para agregar o '-' para disminuir el saldo actual.</p>
+                    
+                    <hr style="border-color: var(--border-color); margin: 15px 0;">
+                    
+                    <h3 style="font-size:1rem; color:var(--primary); margin-bottom:8px;">Historial de Cambios en la Base</h3>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Fecha/Hora</th>
+                                    <th>Caja</th>
+                                    <th>Acción</th>
+                                    <th>Monto</th>
+                                    <th>Saldo Final</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabla-historial-base"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Registrar Operación</h2>
+                <select id="tipo-operacion" onchange="toggleOperacion()">
+                    <option value="venta">Venta</option>
+                    <option value="gasto">Gasto / Compra</option>
+                </select>
+
+                <!-- Formulario Venta -->
+                <div id="form-venta">
+                    <select id="venta-producto" onchange="autofillPrecioVenta()"></select>
+                    <input type="number" id="venta-cantidad" placeholder="Cantidad vendida" value="1" oninput="autofillPrecioVenta()">
+                    <label style="font-size:0.8rem; color:var(--text-secondary);">Precio Final de Venta ($) - Modificable / Descuento:</label>
+                    <input type="number" id="venta-monto" placeholder="Monto total ($)">
+                </div>
+
+                <!-- Formulario Gasto / Compra Stock -->
+                <div id="form-gasto" style="display:none;">
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="gasto-es-stock" onchange="toggleGastoStock()">
+                        <label for="gasto-es-stock">¿Es una compra de stock / mercadería?</label>
+                    </div>
+
+                    <div id="gasto-simple-fields">
+                        <input type="text" id="gasto-concepto" placeholder="Concepto del gasto o compra">
+                    </div>
+
+                    <div id="gasto-stock-fields" style="display:none;">
+                        <select id="gasto-producto" onchange="autofillCostoGasto()"></select>
+                        <input type="number" id="gasto-cantidad-stock" placeholder="Cantidad de unidades compradas" value="1" oninput="autofillCostoGasto()">
+                    </div>
+
+                    <input type="number" id="gasto-monto" placeholder="Monto total pagado ($)">
+                </div>
+
+                <select id="metodo-pago">
+                    <option value="Efectivo">Efectivo</option>
+                    <option value="Nequi">Nequi</option>
+                </select>
+
+                <button class="btn" onclick="procesarOperacion()">Registrar Movimiento</button>
+            </div>
+        </section>
+
+        <!-- HISTORIAL -->
+        <section id="tab-historial" class="tab-content">
+            <div class="card">
+                <h2>Historial Mensual</h2>
+                <select id="filtro-mes" onchange="cargarHistorial()"></select>
+            </div>
+
+            <div class="card">
+                <h3>Ventas Realizadas</h3>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Producto</th>
+                                <th>Cant.</th>
+                                <th>Total</th>
+                                <th>Método</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-historial-ventas"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Gastos y Compras</h3>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Concepto</th>
+                                <th>Monto</th>
+                                <th>Método</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-historial-gastos"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- GRÁFICAS -->
+        <section id="tab-graficas" class="tab-content">
+            <div class="card">
+                <h3>Productos Más Vendidos</h3>
+                <canvas id="chartProductos"></canvas>
+            </div>
+            <div class="card">
+                <h3>Ventas por Día (Mes Actual)</h3>
+                <canvas id="chartVentasDia"></canvas>
+            </div>
+            <div class="card">
+                <h3>Ventas, Gastos y Ganancias</h3>
+                <canvas id="chartFinanzas"></canvas>
+            </div>
+            <div class="card">
+                <h3>Asistencia por Socio (Días Totales)</h3>
+                <canvas id="chartAsistencia"></canvas>
+            </div>
+        </section>
+
+        <!-- SOCIOS -->
+        <section id="tab-socios" class="tab-content">
+            <div class="card">
+                <h2>Gestión de Socios</h2>
+                <input type="text" id="socio-nombre" placeholder="Nombre del Socio">
+                <button class="btn" onclick="agregarSocio()">Agregar Socio</button>
+            </div>
+
+            <div id="lista-socios"></div>
+        </section>
+
+    </div>
+
+    <!-- MODAL EDITAR PRODUCTO -->
+    <div id="modal-editar" class="modal">
+        <div class="modal-content">
+            <h2 style="color:var(--primary); margin-bottom:15px;">Editar Producto</h2>
+            <input type="hidden" id="edit-prod-id">
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Nombre:</label>
+            <input type="text" id="edit-prod-nombre">
+            
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Stock / Cantidad:</label>
+            <input type="number" id="edit-prod-cantidad">
+            
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Costo de Compra ($):</label>
+            <input type="number" id="edit-prod-costo">
+            
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Precio de Venta ($):</label>
+            <input type="number" id="edit-prod-precio">
+            
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Cambiar Foto (Opcional):</label>
+            <input type="file" id="edit-prod-foto" accept="image/*">
+
+            <div class="btn-group">
+                <button class="btn" onclick="guardarEdicionProducto()">Guardar Cambios</button>
+                <button class="btn btn-danger" onclick="cerrarModalEditar()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL EDITAR VENTA -->
+    <div id="modal-editar-venta" class="modal">
+        <div class="modal-content">
+            <h2 style="color:var(--primary); margin-bottom:15px;">Editar Venta Registrada</h2>
+            <input type="hidden" id="edit-venta-id">
+            
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Producto:</label>
+            <select id="edit-venta-producto" onchange="autofillEditVentaPrecio()"></select>
+            
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Cantidad Vendida:</label>
+            <input type="number" id="edit-venta-cantidad" oninput="autofillEditVentaPrecio()">
+            
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Monto Total de Venta ($):</label>
+            <input type="number" id="edit-venta-monto">
+
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Método de Pago:</label>
+            <select id="edit-venta-metodo">
+                <option value="Efectivo">Efectivo</option>
+                <option value="Nequi">Nequi</option>
+            </select>
+
+            <div class="btn-group">
+                <button class="btn" onclick="guardarEdicionVenta()">Guardar Cambios</button>
+                <button class="btn btn-danger" onclick="cerrarModalEditarVenta()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NAVEGACIÓN -->
+    <nav>
+        <button class="nav-btn active" onclick="cambiarTab('tab-inventario', this)">Inventario</button>
+        <button class="nav-btn" onclick="cambiarTab('tab-caja', this)">Caja</button>
+        <button class="nav-btn" onclick="cambiarTab('tab-historial', this)">Historial</button>
+        <button class="nav-btn" onclick="cambiarTab('tab-graficas', this)">Gráficas</button>
+        <button class="nav-btn" onclick="cambiarTab('tab-socios', this)">Socios</button>
+    </nav>
+
+    <script>
+    // CONFIGURACIÓN DE FIREBASE
+    const firebaseConfig = {
+        apiKey: "AIzaSyA84D05AYtM7TTHFxPTT-_b3LojUqYMP08",
+        authDomain: "tikiraka-app.firebaseapp.com",
+        databaseURL: "https://tikiraka-app-default-rtdb.firebaseio.com",
+        projectId: "tikiraka-app",
+        storageBucket: "tikiraka-app.firebasestorage.app",
+        messagingSenderId: "922023852175",
+        appId: "1:922023852175:web:8bf69529b5da453b9658fa",
+        measurementId: "G-K5JWMWHL7Y"
+    };
+
+    let db = null;
+    let conectado = false;
+    let listenersActivos = false;
+
+    let DB = {
+        inventario: [],
+        caja: { efectivo: 0, nequi: 0 },
+        historialBase: [],
+        ventas: [],
+        gastos: [],
+        socios: []
+    };
+
+    let charts = {};
+
+    function formatoMoneda(valor) {
+        return '$ ' + Number(valor || 0).toLocaleString('es-CO');
+    }
+
+    /* ==========================================================
+       BOTÓN / PANEL DE CONEXIÓN
+       Se inyecta solo por JS, así no depende de que exista en tu HTML.
+       Aparece al cargar la página y desaparece en cuanto se conecta.
+       ========================================================== */
+    function crearPanelConexion() {
+        if (document.getElementById('panel-conexion-bd')) return;
+
+        const panel = document.createElement('div');
+        panel.id = 'panel-conexion-bd';
+        panel.style.cssText = `
+            position: fixed; top: 12px; right: 12px; z-index: 9999;
+            background: #1c1c1c; border: 1px solid #d96b1a; border-radius: 8px;
+            padding: 10px 14px; display: flex; align-items: center; gap: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,.4); font-family: sans-serif;
+        `;
+
+        panel.innerHTML = `
+            <span id="panel-conexion-texto" style="color:#eee; font-size:0.85rem;">
+                Sin conexión a la base de datos
+            </span>
+            <button id="btn-conectar-bd" style="
+                background:#d96b1a; color:#fff; border:none; border-radius:6px;
+                padding:6px 12px; font-size:0.85rem; cursor:pointer;">
+                Conectar a Base de Datos
+            </button>
+        `;
+
+        document.body.appendChild(panel);
+        document.getElementById('btn-conectar-bd').addEventListener('click', conectarBD);
+    }
+
+    function ocultarPanelConexion() {
+        const panel = document.getElementById('panel-conexion-bd');
+        if (panel) panel.remove();
+    }
+
+    function mostrarErrorConexion(mensaje) {
+        const texto = document.getElementById('panel-conexion-texto');
+        const boton = document.getElementById('btn-conectar-bd');
+        if (texto) {
+            texto.textContent = mensaje;
+            texto.style.color = '#ff6b6b';
+        }
+        if (boton) {
+            boton.textContent = 'Reintentar';
+            boton.disabled = false;
+        }
+    }
+
+    // Deja Firebase listo (sin autenticar) en cuanto carga la página,
+    // así al dar clic en el botón solo falta el login: es lo único que se demora.
+    function precargarFirebase() {
+        if (typeof firebase === 'undefined' || db) return;
+        try {
+            if (!firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
+            }
+            db = firebase.database();
+        } catch (err) {
+            console.error('Error al pre-inicializar Firebase:', err);
+        }
+    }
+
+    // Punto de entrada: se llama al hacer clic en el botón
+    function conectarBD() {
+        const boton = document.getElementById('btn-conectar-bd');
+        const texto = document.getElementById('panel-conexion-texto');
+        if (boton) { boton.disabled = true; boton.textContent = 'Conectando...'; }
+        if (texto) { texto.style.color = '#eee'; texto.textContent = 'Conectando...'; }
+
+        if (typeof firebase === 'undefined') {
+            console.error('El objeto "firebase" no existe. Los scripts del SDK de Firebase no se cargaron.');
+            mostrarErrorConexion('Falta cargar el SDK de Firebase (revisa las etiquetas <script> de firebase-app/auth/database)');
+            return;
+        }
+
+        try {
+            if (!firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
+            }
+            if (!db) db = firebase.database();
+        } catch (err) {
+            console.error('Error al inicializar Firebase:', err);
+            mostrarErrorConexion('No se pudo inicializar Firebase: ' + (err.message || err));
+            return;
+        }
+
+        firebase.auth().signInAnonymously().catch((error) => {
+            console.error('Error al autenticar de forma segura:', error);
+            mostrarErrorConexion('Error de autenticación: ' + (error.message || 'desconocido'));
+        });
+
+        firebase.auth().onAuthStateChanged((user) => {
+            if (user) {
+                monitorearConexionRed();
+                activarListenerPrincipal();
+            } else {
+                conectado = false;
+            }
+        });
+    }
+
+    // Solo avisa si la conexión se CAE después de ya estar conectados
+    // (la conexión inicial la marca activarListenerPrincipal al recibir el primer dato,
+    // así no se espera un viaje de red extra para ocultar el botón).
+    let primerReporteSocket = true;
+    function monitorearConexionRed() {
+        try {
+            db.ref('.info/connected').on('value', (snap) => {
+                if (snap.val() === true) {
+                    primerReporteSocket = false;
+                    conectado = true;
+                    ocultarPanelConexion();
+                } else if (!primerReporteSocket) {
+                    // Solo mostramos "conexión perdida" si antes SÍ estuvimos conectados
+                    conectado = false;
+                    crearPanelConexion();
+                    mostrarErrorConexion('Conexión perdida, reconectando...');
+                    const boton = document.getElementById('btn-conectar-bd');
+                    if (boton) boton.style.display = 'none'; // Firebase reintenta solo
+                }
+            });
+        } catch (err) {
+            console.error('Error monitoreando la conexión:', err);
+        }
+    }
+
+    function activarListenerPrincipal() {
+        if (listenersActivos) return;
+        listenersActivos = true;
+
+        try {
+            db.ref('tikiraka_app').on('value', (snapshot) => {
+                try {
+                    // En cuanto llega el primer dato real, ya estamos conectados de verdad.
+                    // No hace falta esperar la confirmación aparte de .info/connected.
+                    if (!conectado) {
+                        conectado = true;
+                        ocultarPanelConexion();
+                    }
+                    const data = snapshot.val();
+                    if (data) {
+                        DB.inventario = data.inventario ? Object.values(data.inventario) : [];
+                        DB.caja = data.caja || { efectivo: 0, nequi: 0 };
+                        DB.historialBase = data.historialBase ? Object.values(data.historialBase) : [];
+                        DB.ventas = data.ventas ? Object.values(data.ventas) : [];
+                        DB.gastos = data.gastos ? Object.values(data.gastos) : [];
+
+                        if (data.socios) {
+                            DB.socios = Object.values(data.socios).map(s => ({
+                                ...s,
+                                notas: s.notas || '',
+                                asistencia: s.asistencia ? (Array.isArray(s.asistencia) ? s.asistencia : Object.values(s.asistencia)) : []
+                            }));
+                        } else {
+                            DB.socios = [];
+                        }
+                    } else {
+                        DB = { inventario: [], caja: { efectivo: 0, nequi: 0 }, historialBase: [], ventas: [], gastos: [], socios: [] };
+                    }
+                    actualizarUI();
+                } catch (errInterno) {
+                    console.error('Error procesando datos de la base de datos:', errInterno);
+                }
+            }, (errorLectura) => {
+                console.error('Error de lectura en tiempo real:', errorLectura);
+                mostrarErrorConexion('Error de permisos al leer datos');
+                crearPanelConexion();
+            });
+        } catch (err) {
+            console.error('Error activando el listener principal:', err);
+            mostrarErrorConexion('No se pudo conectar a la base de datos');
+        }
+    }
+
+    /* ==========================================================
+       GUARDADO
+       Ahora se guarda SOLO la sección que cambió (no toda la DB),
+       para que dos dispositivos no se pisen los cambios entre sí.
+       ========================================================== */
+    function guardarDB(clave) {
+        if (!conectado || !db) {
+            alert('No hay conexión a la base de datos. Conéctate primero con el botón de arriba.');
+            crearPanelConexion();
+            return;
+        }
+
+        try {
+            if (clave && DB.hasOwnProperty(clave)) {
+                db.ref('tikiraka_app/' + clave).set(DB[clave]).catch((err) => {
+                    console.error('Error al guardar "' + clave + '":', err);
+                    alert('No se pudo guardar el cambio. Revisa tu conexión.');
+                });
+            } else {
+                // Respaldo: si no se especifica clave, guarda todo (compatibilidad)
+                db.ref('tikiraka_app').set(DB).catch((err) => {
+                    console.error('Error al guardar la base de datos:', err);
+                    alert('No se pudo guardar el cambio. Revisa tu conexión.');
+                });
+            }
+        } catch (err) {
+            console.error('Error inesperado al guardar:', err);
+            alert('No se pudo guardar el cambio. Revisa tu conexión.');
+        }
+    }
+
+    // Ayuda para no romper la página si un elemento no existe todavía
+    function el(id) {
+        return document.getElementById(id);
+    }
+
+    function cambiarTab(tabId, element) {
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        const tab = el(tabId);
+        if (tab) tab.classList.add('active');
+        if (element) element.classList.add('active');
+        if (tabId === 'tab-graficas') renderizarGraficas();
+    }
+
+    function toggleBasePanel() {
+        const content = el('base-collapsible-content');
+        const icon = el('base-toggle-icon');
+        if (!content || !icon) return;
+        if (content.style.display === 'block') {
+            content.style.display = 'none';
+            icon.innerText = '▼';
+        } else {
+            content.style.display = 'block';
+            icon.innerText = '▲';
+        }
+    }
+
+    function actualizarUI() {
+        try { renderInventario(); } catch (e) { console.error(e); }
+        try { renderCaja(); } catch (e) { console.error(e); }
+        try { renderHistorialBase(); } catch (e) { console.error(e); }
+        try { cargarFiltroMeses(); } catch (e) { console.error(e); }
+        try { cargarHistorial(); } catch (e) { console.error(e); }
+        try { renderSocios(); } catch (e) { console.error(e); }
+    }
+
+    /* --- INVENTARIO --- */
+    function agregarProducto() {
+        const nombre = el('prod-nombre')?.value;
+        const cantidad = parseInt(el('prod-cantidad')?.value) || 0;
+        const costo = parseFloat(el('prod-costo')?.value) || 0;
+        const precio = parseFloat(el('prod-precio')?.value) || 0;
+        const fotoInput = el('prod-foto');
+
+        if (!nombre) return alert('Ingresa un nombre de producto');
+
+        const guardar = (fotoBase64) => {
+            DB.inventario.push({ id: Date.now(), nombre, cantidad, costo, precio, foto: fotoBase64 });
+            guardarDB('inventario');
+            limpiarFormularioProd();
+        };
+
+        if (fotoInput && fotoInput.files[0]) {
+            const reader = new FileReader();
+            reader.onload = (e) => guardar(e.target.result);
+            reader.onerror = () => { console.error('Error leyendo la imagen'); guardar(''); };
+            reader.readAsDataURL(fotoInput.files[0]);
+        } else {
+            guardar('');
+        }
+    }
+
+    function limpiarFormularioProd() {
+        ['prod-nombre', 'prod-cantidad', 'prod-costo', 'prod-precio', 'prod-foto'].forEach(id => {
+            const e = el(id);
+            if (e) e.value = '';
+        });
+    }
+
+    function renderInventario() {
+        const tbody = el('tabla-inventario');
+        const selectVenta = el('venta-producto');
+        const selectGasto = el('gasto-producto');
+        if (!tbody || !selectVenta || !selectGasto) return;
+
+        const valVenta = selectVenta.value;
+        const valGasto = selectGasto.value;
+
+        tbody.innerHTML = '';
+        selectVenta.innerHTML = '<option value="">Selecciona Producto</option>';
+        selectGasto.innerHTML = '<option value="">Selecciona Producto</option>';
+
+        DB.inventario.forEach(p => {
+            tbody.innerHTML += `
+                <tr>
+                    <td><img src="${p.foto || 'https://via.placeholder.com/40'}" class="img-thumb"></td>
+                    <td>${p.nombre}</td>
+                    <td><strong>${p.cantidad}</strong></td>
+                    <td>${formatoMoneda(p.precio)}</td>
+                    <td>
+                        <div class="action-btns">
+                            <button class="btn btn-warning" onclick="abrirModalEditar(${p.id})">✏️</button>
+                            <button class="btn btn-danger" onclick="eliminarProducto(${p.id})">X</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            selectVenta.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
+            selectGasto.innerHTML += `<option value="${p.id}">${p.nombre} (Costo: ${formatoMoneda(p.costo)})</option>`;
+        });
+
+        if (valVenta) selectVenta.value = valVenta;
+        if (valGasto) selectGasto.value = valGasto;
+    }
+
+    function eliminarProducto(id) {
+        if (confirm('¿Estás seguro de eliminar este producto?')) {
+            DB.inventario = DB.inventario.filter(p => p.id !== id);
+            guardarDB('inventario');
+        }
+    }
+
+    function abrirModalEditar(id) {
+        const prod = DB.inventario.find(p => p.id === id);
+        if (!prod) return;
+
+        if (el('edit-prod-id')) el('edit-prod-id').value = prod.id;
+        if (el('edit-prod-nombre')) el('edit-prod-nombre').value = prod.nombre;
+        if (el('edit-prod-cantidad')) el('edit-prod-cantidad').value = prod.cantidad;
+        if (el('edit-prod-costo')) el('edit-prod-costo').value = prod.costo;
+        if (el('edit-prod-precio')) el('edit-prod-precio').value = prod.precio;
+        if (el('edit-prod-foto')) el('edit-prod-foto').value = '';
+
+        if (el('modal-editar')) el('modal-editar').style.display = 'flex';
+    }
+
+    function cerrarModalEditar() {
+        if (el('modal-editar')) el('modal-editar').style.display = 'none';
+    }
+
+    function guardarEdicionProducto() {
+        const id = parseInt(el('edit-prod-id')?.value);
+        const prod = DB.inventario.find(p => p.id === id);
+        if (!prod) return;
+
+        const nombre = el('edit-prod-nombre')?.value;
+        const cantidad = parseInt(el('edit-prod-cantidad')?.value) || 0;
+        const costo = parseFloat(el('edit-prod-costo')?.value) || 0;
+        const precio = parseFloat(el('edit-prod-precio')?.value) || 0;
+        const fotoInput = el('edit-prod-foto');
+
+        if (!nombre) return alert('El nombre no puede estar vacío');
+
+        prod.nombre = nombre;
+        prod.cantidad = cantidad;
+        prod.costo = costo;
+        prod.precio = precio;
+
+        if (fotoInput && fotoInput.files[0]) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                prod.foto = e.target.result;
+                guardarDB('inventario');
+                cerrarModalEditar();
+            };
+            reader.onerror = () => { guardarDB('inventario'); cerrarModalEditar(); };
+            reader.readAsDataURL(fotoInput.files[0]);
+        } else {
+            guardarDB('inventario');
+            cerrarModalEditar();
+        }
+    }
+
+    /* --- CAJA --- */
+    function renderCaja() {
+        const ef = DB.caja.efectivo || 0;
+        const nq = DB.caja.nequi || 0;
+        if (el('total-efectivo')) el('total-efectivo').innerText = formatoMoneda(ef);
+        if (el('total-nequi')) el('total-nequi').innerText = formatoMoneda(nq);
+        if (el('total-general')) el('total-general').innerText = formatoMoneda(ef + nq);
+    }
+
+    function modificarSaldoBase(tipo, accion) {
+        const inputId = tipo === 'efectivo' ? 'base-efectivo' : 'base-nequi';
+        const inputEl = el(inputId);
+        if (!inputEl) return;
+        const monto = parseFloat(inputEl.value);
+
+        if (isNaN(monto) || monto <= 0) return alert('Ingresa un valor numérico válido mayor a 0');
+
+        let accionEtiqueta = '';
+        let saldoFinal = 0;
+
+        if (tipo === 'efectivo') {
+            if (accion === 'fijar') { DB.caja.efectivo = monto; accionEtiqueta = 'Fijar Base'; }
+            else if (accion === 'sumar') { DB.caja.efectivo = (DB.caja.efectivo || 0) + monto; accionEtiqueta = 'Agregó (+)'; }
+            else if (accion === 'restar') { DB.caja.efectivo = (DB.caja.efectivo || 0) - monto; accionEtiqueta = 'Disminuyó (-)'; }
+            saldoFinal = DB.caja.efectivo;
+        } else {
+            if (accion === 'fijar') { DB.caja.nequi = monto; accionEtiqueta = 'Fijar Base'; }
+            else if (accion === 'sumar') { DB.caja.nequi = (DB.caja.nequi || 0) + monto; accionEtiqueta = 'Agregó (+)'; }
+            else if (accion === 'restar') { DB.caja.nequi = (DB.caja.nequi || 0) - monto; accionEtiqueta = 'Disminuyó (-)'; }
+            saldoFinal = DB.caja.nequi;
+        }
+
+        if (!DB.historialBase) DB.historialBase = [];
+        const fechaHora = new Date().toISOString();
+        DB.historialBase.unshift({
+            fecha: fechaHora,
+            tipo: tipo.toUpperCase(),
+            accion: accionEtiqueta,
+            monto: monto,
+            saldoResultante: saldoFinal
+        });
+
+        // Cambian dos secciones: guardamos ambas
+        guardarDB('caja');
+        guardarDB('historialBase');
+        inputEl.value = '';
+        alert(`Saldo de ${tipo.toUpperCase()} actualizado correctamente`);
+    }
+
+    function renderHistorialBase() {
+        const tbody = el('tabla-historial-base');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        if (!DB.historialBase || DB.historialBase.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-secondary);">Sin registros de cambios en base.</td></tr>';
+            return;
+        }
+
+        DB.historialBase.forEach(h => {
+            let colorAccion = '#fff';
+            if (h.accion.includes('+')) colorAccion = 'var(--success)';
+            if (h.accion.includes('-')) colorAccion = 'var(--danger)';
+            if (h.accion.includes('Fijar')) colorAccion = 'var(--warning)';
+
+            const fechaMostrar = h.fecha ? (typeof h.fecha === 'string' && h.fecha.includes('T') ? new Date(h.fecha).toLocaleString('es-CO') : h.fecha) : 'Sin fecha';
+
+            tbody.innerHTML += `
+                <tr>
+                    <td style="font-size:0.75rem;">${fechaMostrar}</td>
+                    <td><strong>${h.tipo}</strong></td>
+                    <td style="color:${colorAccion}; font-weight:bold;">${h.accion}</td>
+                    <td>${formatoMoneda(h.monto)}</td>
+                    <td><strong>${formatoMoneda(h.saldoResultante)}</strong></td>
+                </tr>
+            `;
+        });
+    }
+
+    function toggleOperacion() {
+        const tipo = el('tipo-operacion')?.value;
+        if (el('form-venta')) el('form-venta').style.display = tipo === 'venta' ? 'block' : 'none';
+        if (el('form-gasto')) el('form-gasto').style.display = tipo === 'gasto' ? 'block' : 'none';
+    }
+
+    function toggleGastoStock() {
+        const esStock = el('gasto-es-stock')?.checked;
+        if (el('gasto-simple-fields')) el('gasto-simple-fields').style.display = esStock ? 'none' : 'block';
+        if (el('gasto-stock-fields')) el('gasto-stock-fields').style.display = esStock ? 'block' : 'none';
+    }
+
+    function autofillPrecioVenta() {
+        const prodId = parseInt(el('venta-producto')?.value);
+        const cant = parseInt(el('venta-cantidad')?.value) || 1;
+        const prod = DB.inventario.find(p => p.id === prodId);
+        if (el('venta-monto')) el('venta-monto').value = prod ? prod.precio * cant : '';
+    }
+
+    function autofillCostoGasto() {
+        const prodId = parseInt(el('gasto-producto')?.value);
+        const cant = parseInt(el('gasto-cantidad-stock')?.value) || 1;
+        const prod = DB.inventario.find(p => p.id === prodId);
+        if (el('gasto-monto')) el('gasto-monto').value = prod ? prod.costo * cant : '';
+    }
+
+    function limpiarFormularioOperacion() {
+        if (el('venta-producto')) el('venta-producto').value = '';
+        if (el('venta-cantidad')) el('venta-cantidad').value = '';
+        if (el('venta-monto')) el('venta-monto').value = '';
+
+        if (el('gasto-es-stock')) el('gasto-es-stock').checked = false;
+        toggleGastoStock();
+        if (el('gasto-concepto')) el('gasto-concepto').value = '';
+        if (el('gasto-producto')) el('gasto-producto').value = '';
+        if (el('gasto-cantidad-stock')) el('gasto-cantidad-stock').value = '';
+        if (el('gasto-monto')) el('gasto-monto').value = '';
+    }
+
+    function procesarOperacion() {
+        const tipo = el('tipo-operacion')?.value;
+        const metodoVal = el('metodo-pago')?.value;
+        const fechaIso = new Date().toISOString();
+
+        if (tipo === 'venta') {
+            const prodId = parseInt(el('venta-producto')?.value);
+            const cant = parseInt(el('venta-cantidad')?.value) || 0;
+            const montoVal = parseFloat(el('venta-monto')?.value) || 0;
+            const prod = DB.inventario.find(p => p.id === prodId);
+
+            if (!prod) return alert('Selecciona un producto válido');
+            if (cant <= 0) return alert('La cantidad debe ser mayor a cero');
+            if (prod.cantidad < cant) return alert('Stock insuficiente');
+
+            prod.cantidad -= cant;
+
+            if (metodoVal === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) + montoVal;
+            else DB.caja.nequi = (DB.caja.nequi || 0) + montoVal;
+
+            DB.ventas.unshift({
+                id: Date.now(),
+                prodId: prod.id,
+                prodNombre: prod.nombre,
+                cantidad: cant,
+                costoUnitario: prod.costo || 0,
+                monto: montoVal,
+                metodo: metodoVal,
+                fecha: fechaIso
+            });
+
+            guardarDB('inventario');
+            guardarDB('caja');
+            guardarDB('ventas');
+
+        } else {
+            const esStock = el('gasto-es-stock')?.checked;
+            const montoVal = parseFloat(el('gasto-monto')?.value) || 0;
+            let concepto = '';
+
+            if (montoVal <= 0) return alert('Ingresa un monto válido');
+
+            if (esStock) {
+                const prodId = parseInt(el('gasto-producto')?.value);
+                const cant = parseInt(el('gasto-cantidad-stock')?.value) || 0;
+                const prod = DB.inventario.find(p => p.id === prodId);
+
+                if (!prod) return alert('Selecciona un producto para reposición');
+                if (cant <= 0) return alert('La cantidad debe ser mayor a cero');
+
+                prod.cantidad += cant;
+                concepto = `Compra Stock: ${prod.nombre} (+${cant})`;
+                guardarDB('inventario');
+            } else {
+                concepto = el('gasto-concepto')?.value;
+                if (!concepto) return alert('Ingresa un concepto del gasto');
+            }
+
+            if (metodoVal === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) - montoVal;
+            else DB.caja.nequi = (DB.caja.nequi || 0) - montoVal;
+
+            DB.gastos.unshift({
+                id: Date.now(),
+                concepto: concepto,
+                monto: montoVal,
+                metodo: metodoVal,
+                fecha: fechaIso
+            });
+
+            guardarDB('caja');
+            guardarDB('gastos');
+        }
+
+        limpiarFormularioOperacion();
+        alert('Operación registrada exitosamente');
+    }
+
+    /* --- EDICIÓN Y ELIMINACIÓN DE VENTAS --- */
+    function eliminarVenta(id) {
+        if (!confirm('¿Estás seguro de eliminar esta venta? Esto devolverá el stock al inventario y descontará el dinero de la caja.')) return;
+
+        const index = DB.ventas.findIndex(v => v.id === id);
+        if (index === -1) return;
+
+        const venta = DB.ventas[index];
+        const pId = venta.prodId || venta.productoId;
+        const cantVenta = venta.cantidad || 1;
+        const montoVenta = venta.monto !== undefined ? venta.monto : (venta.montoTotal || 0);
+        const metodoVenta = venta.metodo || venta.metodoPago || 'Efectivo';
+
+        const prod = DB.inventario.find(p => p.id === pId);
+        if (prod) prod.cantidad += cantVenta;
+
+        if (metodoVenta === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) - montoVenta;
+        else DB.caja.nequi = (DB.caja.nequi || 0) - montoVenta;
+
+        DB.ventas.splice(index, 1);
+
+        guardarDB('inventario');
+        guardarDB('caja');
+        guardarDB('ventas');
+        alert('Venta eliminada y saldos/inventario reajustados.');
+    }
+
+    function abrirModalEditarVenta(id) {
+        const venta = DB.ventas.find(v => v.id === id);
+        if (!venta) return;
+
+        const selectProd = el('edit-venta-producto');
+        if (!selectProd) return;
+        selectProd.innerHTML = '';
+
+        DB.inventario.forEach(p => {
+            selectProd.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
+        });
+
+        if (el('edit-venta-id')) el('edit-venta-id').value = venta.id;
+        selectProd.value = venta.prodId || venta.productoId;
+        if (el('edit-venta-cantidad')) el('edit-venta-cantidad').value = venta.cantidad || 1;
+        if (el('edit-venta-monto')) el('edit-venta-monto').value = venta.monto !== undefined ? venta.monto : (venta.montoTotal || 0);
+        if (el('edit-venta-metodo')) el('edit-venta-metodo').value = venta.metodo || venta.metodoPago || 'Efectivo';
+
+        if (el('modal-editar-venta')) el('modal-editar-venta').style.display = 'flex';
+    }
+
+    function cerrarModalEditarVenta() {
+        if (el('modal-editar-venta')) el('modal-editar-venta').style.display = 'none';
+    }
+
+    function autofillEditVentaPrecio() {
+        const prodId = parseInt(el('edit-venta-producto')?.value);
+        const cant = parseInt(el('edit-venta-cantidad')?.value) || 1;
+        const prod = DB.inventario.find(p => p.id === prodId);
+        if (prod && el('edit-venta-monto')) el('edit-venta-monto').value = prod.precio * cant;
+    }
+
+    function guardarEdicionVenta() {
+        const id = parseInt(el('edit-venta-id')?.value);
+        const venta = DB.ventas.find(v => v.id === id);
+        if (!venta) return;
+
+        const nuevoProdId = parseInt(el('edit-venta-producto')?.value);
+        const nuevaCant = parseInt(el('edit-venta-cantidad')?.value) || 0;
+        const nuevoMonto = parseFloat(el('edit-venta-monto')?.value) || 0;
+        const nuevoMetodo = el('edit-venta-metodo')?.value;
+
+        if (nuevaCant <= 0) return alert('La cantidad debe ser mayor a 0');
+        if (nuevoMonto < 0) return alert('El monto no puede ser negativo');
+
+        const pIdAntiguo = venta.prodId || venta.productoId;
+        const cantAntigua = venta.cantidad || 1;
+        const montoAntiguo = venta.monto !== undefined ? venta.monto : (venta.montoTotal || 0);
+        const metodoAntiguo = venta.metodo || venta.metodoPago || 'Efectivo';
+
+        const prodAntiguo = DB.inventario.find(p => p.id === pIdAntiguo);
+        if (prodAntiguo) prodAntiguo.cantidad += cantAntigua;
+
+        if (metodoAntiguo === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) - montoAntiguo;
+        else DB.caja.nequi = (DB.caja.nequi || 0) - montoAntiguo;
+
+        const nuevoProd = DB.inventario.find(p => p.id === nuevoProdId);
+        if (!nuevoProd) return alert('Producto no encontrado');
+        if (nuevoProd.cantidad < nuevaCant) {
+            if (prodAntiguo) prodAntiguo.cantidad -= cantAntigua;
+            if (metodoAntiguo === 'Efectivo') DB.caja.efectivo += montoAntiguo;
+            else DB.caja.nequi += montoAntiguo;
+            return alert('Stock insuficiente para la nueva cantidad');
+        }
+
+        nuevoProd.cantidad -= nuevaCant;
+
+        if (nuevoMetodo === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) + nuevoMonto;
+        else DB.caja.nequi = (DB.caja.nequi || 0) + nuevoMonto;
+
+        venta.prodId = nuevoProd.id;
+        venta.prodNombre = nuevoProd.nombre;
+        venta.cantidad = nuevaCant;
+        venta.monto = nuevoMonto;
+        venta.metodo = nuevoMetodo;
+        venta.costoUnitario = nuevoProd.costo || 0;
+
+        guardarDB('inventario');
+        guardarDB('caja');
+        guardarDB('ventas');
+        cerrarModalEditarVenta();
+        alert('Venta actualizada correctamente');
+    }
+
+    /* --- HISTORIAL --- */
+    function cargarFiltroMeses() {
+        const selectMes = el('filtro-mes');
+        if (!selectMes) return;
+        const opcionActual = selectMes.value;
+
+        selectMes.innerHTML = '<option value="TODOS">Todos los meses</option>';
+
+        const mesesSet = new Set();
+        [...DB.ventas, ...DB.gastos].forEach(item => {
+            const f = item.fecha || item.isoFecha;
+            if (f && typeof f === 'string') mesesSet.add(f.substring(0, 7));
+        });
+
+        Array.from(mesesSet).sort().reverse().forEach(m => {
+            const [yyyy, mm] = m.split('-');
+            if (yyyy && mm) {
+                const fechaObj = new Date(yyyy, mm - 1, 1);
+                const nombreMes = fechaObj.toLocaleString('es-CO', { month: 'long', year: 'numeric' });
+                selectMes.innerHTML += `<option value="${m}">${nombreMes.toUpperCase()}</option>`;
+            }
+        });
+
+        if (opcionActual) selectMes.value = opcionActual;
+    }
+
+    function cargarHistorial() {
+        const filtro = el('filtro-mes')?.value || 'TODOS';
+        const tbodyVentas = el('tabla-historial-ventas');
+        const tbodyGastos = el('tabla-historial-gastos');
+        if (!tbodyVentas || !tbodyGastos) return;
+
+        tbodyVentas.innerHTML = '';
+        tbodyGastos.innerHTML = '';
+
+        const ventasFiltradas = DB.ventas.filter(v => {
+            const f = v.fecha || v.isoFecha || '';
+            return filtro === 'TODOS' || f.startsWith(filtro);
+        });
+
+        const gastosFiltrados = DB.gastos.filter(g => {
+            const f = g.fecha || g.isoFecha || '';
+            return filtro === 'TODOS' || f.startsWith(filtro);
+        });
+
+        ventasFiltradas.forEach(v => {
+            const prodNombre = v.prodNombre || v.productoNombre || 'Sin Nombre';
+            const montoVal = v.monto !== undefined ? v.monto : (v.montoTotal || 0);
+            const metodoVal = v.metodo || v.metodoPago || 'Efectivo';
+            const fechaMostrar = v.fecha ? (typeof v.fecha === 'string' && v.fecha.includes('T') ? new Date(v.fecha).toLocaleString('es-CO') : v.fecha) : 'Sin fecha';
+
+            tbodyVentas.innerHTML += `
+                <tr>
+                    <td style="font-size:0.75rem;">${fechaMostrar}</td>
+                    <td>${prodNombre}</td>
+                    <td>${v.cantidad || 1}</td>
+                    <td><strong>${formatoMoneda(montoVal)}</strong></td>
+                    <td>${metodoVal}</td>
+                    <td>
+                        <div class="action-btns">
+                            <button class="btn btn-warning" onclick="abrirModalEditarVenta(${v.id})">✏️</button>
+                            <button class="btn btn-danger" onclick="eliminarVenta(${v.id})">🗑️</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+
+        gastosFiltrados.forEach(g => {
+            const montoVal = g.monto !== undefined ? g.monto : (g.montoTotal || 0);
+            const metodoVal = g.metodo || g.metodoPago || 'Efectivo';
+            const fechaMostrar = g.fecha ? (typeof g.fecha === 'string' && g.fecha.includes('T') ? new Date(g.fecha).toLocaleString('es-CO') : g.fecha) : 'Sin fecha';
+
+            tbodyGastos.innerHTML += `
+                <tr>
+                    <td style="font-size:0.75rem;">${fechaMostrar}</td>
+                    <td>${g.concepto || 'Gasto'}</td>
+                    <td><strong style="color:var(--danger);">${formatoMoneda(montoVal)}</strong></td>
+                    <td>${metodoVal}</td>
+                </tr>
+            `;
+        });
+    }
+
+    /* --- GRÁFICAS --- */
+    function renderizarGraficas() {
+        const canvasProd = el('chartProductos');
+        const canvasDia = el('chartVentasDia');
+        const canvasFin = el('chartFinanzas');
+        const canvasAsis = el('chartAsistencia');
+        if (!canvasProd || !canvasDia || !canvasFin || !canvasAsis) return;
+
+        const prodConteo = {};
+        DB.ventas.forEach(v => {
+            const nombre = v.prodNombre || v.productoNombre || 'Producto';
+            const cant = v.cantidad || 1;
+            prodConteo[nombre] = (prodConteo[nombre] || 0) + cant;
+        });
+
+        if (charts.prod) charts.prod.destroy();
+        charts.prod = new Chart(canvasProd.getContext('2d'), {
+            type: 'bar',
+            data: { labels: Object.keys(prodConteo), datasets: [{ label: 'Unidades Vendidas', data: Object.values(prodConteo), backgroundColor: '#d96b1a' }] },
+            options: { responsive: true, plugins: { legend: { display: false } } }
+        });
+
+        const ventasDia = {};
+        DB.ventas.forEach(v => {
+            let dia = 'Fecha';
+            if (v.fecha && typeof v.fecha === 'string') {
+                dia = v.fecha.includes('T') ? new Date(v.fecha).toLocaleDateString('es-CO') : v.fecha.split(',')[0];
+            }
+            const montoVal = v.monto !== undefined ? v.monto : (v.montoTotal || 0);
+            ventasDia[dia] = (ventasDia[dia] || 0) + montoVal;
+        });
+
+        if (charts.dia) charts.dia.destroy();
+        charts.dia = new Chart(canvasDia.getContext('2d'), {
+            type: 'line',
+            data: { labels: Object.keys(ventasDia), datasets: [{ label: 'Ventas ($)', data: Object.values(ventasDia), borderColor: '#2e7d32', fill: false }] },
+            options: { responsive: true }
+        });
+
+        const totalVentas = DB.ventas.reduce((sum, v) => sum + (v.monto !== undefined ? v.monto : (v.montoTotal || 0)), 0);
+        const totalGastos = DB.gastos.reduce((sum, g) => sum + (g.monto !== undefined ? g.monto : (g.montoTotal || 0)), 0);
+        const ganancia = totalVentas - totalGastos;
+
+        if (charts.fin) charts.fin.destroy();
+        charts.fin = new Chart(canvasFin.getContext('2d'), {
+            type: 'doughnut',
+            data: { labels: ['Ventas Totales', 'Gastos Totales', 'Ganancia Neta'], datasets: [{ data: [totalVentas, totalGastos, ganancia < 0 ? 0 : ganancia], backgroundColor: ['#2e7d32', '#c62828', '#ffd700'] }] },
+            options: { responsive: true }
+        });
+
+        const nombresSocios = DB.socios.map(s => s.nombre);
+        const diasAsistidos = DB.socios.map(s => (s.asistencia ? s.asistencia.length : 0));
+
+        if (charts.asis) charts.asis.destroy();
+        charts.asis = new Chart(canvasAsis.getContext('2d'), {
+            type: 'bar',
+            data: { labels: nombresSocios, datasets: [{ label: 'Días Trabados / Asistidos', data: diasAsistidos, backgroundColor: '#f57c00' }] },
+            options: { responsive: true }
+        });
+    }
+
+    /* --- SOCIOS --- */
+    function agregarSocio() {
+        const nombreEl = el('socio-nombre');
+        const nombre = nombreEl?.value;
+        if (!nombre) return alert('Ingresa el nombre del socio');
+
+        DB.socios.push({ id: Date.now(), nombre, asistencia: [], notas: '' });
+        guardarDB('socios');
+        if (nombreEl) nombreEl.value = '';
+    }
+
+    function renderSocios() {
+        const div = el('lista-socios');
+        if (!div) return;
+        div.innerHTML = '';
+
+        const hoy = new Date().toLocaleDateString('es-CO');
+
+        DB.socios.forEach(s => {
+            const marcoHoy = s.asistencia && s.asistencia.includes(hoy);
+            const notasTexto = s.notas || '';
+
+            div.innerHTML += `
+                <div class="card">
+                    <div class="socio-header">
+                        <h3>${s.nombre}</h3>
+                        <button class="btn btn-danger" style="width:auto; padding:3px 8px;" onclick="eliminarSocio(${s.id})">X</button>
+                    </div>
+                    <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:10px;">
+                        Días Asistidos: <strong>${s.asistencia ? s.asistencia.length : 0}</strong>
+                    </p>
+                    <button class="btn ${marcoHoy ? 'btn-danger' : ''}" onclick="marcarAsistencia(${s.id}, '${hoy}')">
+                        ${marcoHoy ? 'Desmarcar Asistencia de Hoy' : 'Marcar Asistencia Hoy (' + hoy + ')'}
+                    </button>
+
+                    <div style="margin-top:15px;">
+                        <label style="font-size:0.8rem; color:var(--text-secondary);">Notas / Observaciones:</label>
+                        <textarea id="notas-socio-${s.id}" placeholder="Escribe notas sobre este socio...">${notasTexto}</textarea>
+                        <button class="btn btn-warning" style="padding:6px; font-size:0.85rem;" onclick="guardarNotaSocio(${s.id})">Guardar Nota</button>
+                    </div>
+                </div>
+            `;
+        });
+    }
+
+    function eliminarSocio(id) {
+        if (confirm('¿Eliminar este socio?')) {
+            DB.socios = DB.socios.filter(s => s.id !== id);
+            guardarDB('socios');
+        }
+    }
+
+    function marcarAsistencia(id, fecha) {
+        const socio = DB.socios.find(s => s.id === id);
+        if (!socio) return;
+        if (!socio.asistencia) socio.asistencia = [];
+
+        const index = socio.asistencia.indexOf(fecha);
+        if (index > -1) socio.asistencia.splice(index, 1);
+        else socio.asistencia.push(fecha);
+
+        guardarDB('socios');
+    }
+
+    function guardarNotaSocio(id) {
+        const socio = DB.socios.find(s => s.id === id);
+        if (!socio) return;
+
+        const textarea = el(`notas-socio-${id}`);
+        if (textarea) {
+            socio.notas = textarea.value;
+            guardarDB('socios');
+            alert(`Nota guardada para ${socio.nombre}`);
+        }
+    }
+
+    /* --- INICIO --- */
+    // Muestra el botón de conexión en cuanto la página carga y deja Firebase
+    // pre-inicializado (sin autenticar) para que el clic sea más rápido.
+    // La app ya NO se conecta sola: se autentica cuando el usuario da clic.
+    function inicio() {
+        crearPanelConexion();
+        precargarFirebase();
+    }
+    document.addEventListener('DOMContentLoaded', inicio);
+    // Por si el script se carga después de que el DOM ya estaba listo:
+    if (document.readyState !== 'loading') inicio();
+    </script>
+</body>
+</html>
