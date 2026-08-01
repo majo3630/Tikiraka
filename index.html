@@ -429,6 +429,7 @@
                 <select id="tipo-operacion" onchange="toggleOperacion()">
                     <option value="venta">Venta</option>
                     <option value="gasto">Gasto / Compra</option>
+                    <option value="devolucion">Devolución</option>
                 </select>
 
                 <!-- Formulario Venta -->
@@ -458,6 +459,19 @@
                     <input type="number" id="gasto-monto" placeholder="Monto total pagado ($)">
                 </div>
 
+                <!-- Formulario Devolución -->
+                <div id="form-devolucion" style="display:none;">
+                    <label style="font-size:0.8rem; color:var(--text-secondary);">Producto Devuelto:</label>
+                    <select id="devolucion-producto" onchange="autofillMontoDevolucion()"></select>
+                    <input type="number" id="devolucion-cantidad" placeholder="Cantidad devuelta" value="1" oninput="autofillMontoDevolucion()">
+                    <label style="font-size:0.8rem; color:var(--text-secondary);">Monto a Reembolsar ($):</label>
+                    <input type="number" id="devolucion-monto" placeholder="Monto a devolver ($)">
+                    <p class="hint-text">El producto vuelve al inventario y el monto se descuenta de la caja.</p>
+                </div>
+
+                <label style="font-size:0.8rem; color:var(--text-secondary);">Comentario (opcional):</label>
+                <input type="text" id="operacion-comentario" placeholder="Ej: cliente pidió cambio de color, pago con descuento, etc.">
+
                 <select id="metodo-pago">
                     <option value="Efectivo">Efectivo</option>
                     <option value="Nequi">Nequi</option>
@@ -485,10 +499,30 @@
                                 <th>Cant.</th>
                                 <th>Total</th>
                                 <th>Método</th>
+                                <th>Comentario</th>
                                 <th>Acción</th>
                             </tr>
                         </thead>
                         <tbody id="tabla-historial-ventas"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Devoluciones</h3>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Producto</th>
+                                <th>Cant.</th>
+                                <th>Monto</th>
+                                <th>Método</th>
+                                <th>Comentario</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-historial-devoluciones"></tbody>
                     </table>
                 </div>
             </div>
@@ -503,6 +537,7 @@
                                 <th>Concepto</th>
                                 <th>Monto</th>
                                 <th>Método</th>
+                                <th>Comentario</th>
                             </tr>
                         </thead>
                         <tbody id="tabla-historial-gastos"></tbody>
@@ -631,6 +666,7 @@
         historialBase: [],
         ventas: [],
         gastos: [],
+        devoluciones: [],
         socios: []
     };
 
@@ -788,6 +824,7 @@
                         DB.historialBase = data.historialBase ? Object.values(data.historialBase) : [];
                         DB.ventas = data.ventas ? Object.values(data.ventas) : [];
                         DB.gastos = data.gastos ? Object.values(data.gastos) : [];
+                        DB.devoluciones = data.devoluciones ? Object.values(data.devoluciones) : [];
 
                         if (data.socios) {
                             DB.socios = Object.values(data.socios).map(s => ({
@@ -799,7 +836,7 @@
                             DB.socios = [];
                         }
                     } else {
-                        DB = { inventario: [], caja: { efectivo: 0, nequi: 0 }, historialBase: [], ventas: [], gastos: [], socios: [] };
+                        DB = { inventario: [], caja: { efectivo: 0, nequi: 0 }, historialBase: [], ventas: [], gastos: [], devoluciones: [], socios: [] };
                     }
                     actualizarUI();
                 } catch (errInterno) {
@@ -920,14 +957,17 @@
         const tbody = el('tabla-inventario');
         const selectVenta = el('venta-producto');
         const selectGasto = el('gasto-producto');
-        if (!tbody || !selectVenta || !selectGasto) return;
+        const selectDevolucion = el('devolucion-producto');
+        if (!tbody || !selectVenta || !selectGasto || !selectDevolucion) return;
 
         const valVenta = selectVenta.value;
         const valGasto = selectGasto.value;
+        const valDevolucion = selectDevolucion.value;
 
         tbody.innerHTML = '';
         selectVenta.innerHTML = '<option value="">Selecciona Producto</option>';
         selectGasto.innerHTML = '<option value="">Selecciona Producto</option>';
+        selectDevolucion.innerHTML = '<option value="">Selecciona Producto</option>';
 
         DB.inventario.forEach(p => {
             tbody.innerHTML += `
@@ -946,10 +986,12 @@
             `;
             selectVenta.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
             selectGasto.innerHTML += `<option value="${p.id}">${p.nombre} (Costo: ${formatoMoneda(p.costo)})</option>`;
+            selectDevolucion.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
         });
 
         if (valVenta) selectVenta.value = valVenta;
         if (valGasto) selectGasto.value = valGasto;
+        if (valDevolucion) selectDevolucion.value = valDevolucion;
     }
 
     function eliminarProducto(id) {
@@ -1093,6 +1135,7 @@
         const tipo = el('tipo-operacion')?.value;
         if (el('form-venta')) el('form-venta').style.display = tipo === 'venta' ? 'block' : 'none';
         if (el('form-gasto')) el('form-gasto').style.display = tipo === 'gasto' ? 'block' : 'none';
+        if (el('form-devolucion')) el('form-devolucion').style.display = tipo === 'devolucion' ? 'block' : 'none';
     }
 
     function toggleGastoStock() {
@@ -1115,6 +1158,13 @@
         if (el('gasto-monto')) el('gasto-monto').value = prod ? prod.costo * cant : '';
     }
 
+    function autofillMontoDevolucion() {
+        const prodId = parseInt(el('devolucion-producto')?.value);
+        const cant = parseInt(el('devolucion-cantidad')?.value) || 1;
+        const prod = DB.inventario.find(p => p.id === prodId);
+        if (el('devolucion-monto')) el('devolucion-monto').value = prod ? prod.precio * cant : '';
+    }
+
     function limpiarFormularioOperacion() {
         if (el('venta-producto')) el('venta-producto').value = '';
         if (el('venta-cantidad')) el('venta-cantidad').value = '';
@@ -1126,11 +1176,18 @@
         if (el('gasto-producto')) el('gasto-producto').value = '';
         if (el('gasto-cantidad-stock')) el('gasto-cantidad-stock').value = '';
         if (el('gasto-monto')) el('gasto-monto').value = '';
+
+        if (el('devolucion-producto')) el('devolucion-producto').value = '';
+        if (el('devolucion-cantidad')) el('devolucion-cantidad').value = '';
+        if (el('devolucion-monto')) el('devolucion-monto').value = '';
+
+        if (el('operacion-comentario')) el('operacion-comentario').value = '';
     }
 
     function procesarOperacion() {
         const tipo = el('tipo-operacion')?.value;
         const metodoVal = el('metodo-pago')?.value;
+        const comentario = el('operacion-comentario')?.value || '';
         const fechaIso = new Date().toISOString();
 
         if (tipo === 'venta') {
@@ -1156,12 +1213,46 @@
                 costoUnitario: prod.costo || 0,
                 monto: montoVal,
                 metodo: metodoVal,
+                comentario: comentario,
                 fecha: fechaIso
             });
 
             guardarDB('inventario');
             guardarDB('caja');
             guardarDB('ventas');
+
+        } else if (tipo === 'devolucion') {
+            const prodId = parseInt(el('devolucion-producto')?.value);
+            const cant = parseInt(el('devolucion-cantidad')?.value) || 0;
+            const montoVal = parseFloat(el('devolucion-monto')?.value) || 0;
+            const prod = DB.inventario.find(p => p.id === prodId);
+
+            if (!prod) return alert('Selecciona un producto válido');
+            if (cant <= 0) return alert('La cantidad debe ser mayor a cero');
+            if (montoVal < 0) return alert('El monto no puede ser negativo');
+
+            // El producto devuelto regresa al inventario
+            prod.cantidad += cant;
+
+            // El reembolso sale de la caja
+            if (metodoVal === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) - montoVal;
+            else DB.caja.nequi = (DB.caja.nequi || 0) - montoVal;
+
+            if (!DB.devoluciones) DB.devoluciones = [];
+            DB.devoluciones.unshift({
+                id: Date.now(),
+                prodId: prod.id,
+                prodNombre: prod.nombre,
+                cantidad: cant,
+                monto: montoVal,
+                metodo: metodoVal,
+                comentario: comentario,
+                fecha: fechaIso
+            });
+
+            guardarDB('inventario');
+            guardarDB('caja');
+            guardarDB('devoluciones');
 
         } else {
             const esStock = el('gasto-es-stock')?.checked;
@@ -1194,6 +1285,7 @@
                 concepto: concepto,
                 monto: montoVal,
                 metodo: metodoVal,
+                comentario: comentario,
                 fecha: fechaIso
             });
 
@@ -1325,7 +1417,7 @@
         selectMes.innerHTML = '<option value="TODOS">Todos los meses</option>';
 
         const mesesSet = new Set();
-        [...DB.ventas, ...DB.gastos].forEach(item => {
+        [...DB.ventas, ...DB.gastos, ...(DB.devoluciones || [])].forEach(item => {
             const f = item.fecha || item.isoFecha;
             if (f && typeof f === 'string') mesesSet.add(f.substring(0, 7));
         });
@@ -1342,14 +1434,23 @@
         if (opcionActual) selectMes.value = opcionActual;
     }
 
+    function escaparTexto(texto) {
+        if (!texto) return '';
+        const div = document.createElement('div');
+        div.textContent = texto;
+        return div.innerHTML;
+    }
+
     function cargarHistorial() {
         const filtro = el('filtro-mes')?.value || 'TODOS';
         const tbodyVentas = el('tabla-historial-ventas');
         const tbodyGastos = el('tabla-historial-gastos');
-        if (!tbodyVentas || !tbodyGastos) return;
+        const tbodyDevoluciones = el('tabla-historial-devoluciones');
+        if (!tbodyVentas || !tbodyGastos || !tbodyDevoluciones) return;
 
         tbodyVentas.innerHTML = '';
         tbodyGastos.innerHTML = '';
+        tbodyDevoluciones.innerHTML = '';
 
         const ventasFiltradas = DB.ventas.filter(v => {
             const f = v.fecha || v.isoFecha || '';
@@ -1358,6 +1459,11 @@
 
         const gastosFiltrados = DB.gastos.filter(g => {
             const f = g.fecha || g.isoFecha || '';
+            return filtro === 'TODOS' || f.startsWith(filtro);
+        });
+
+        const devolucionesFiltradas = (DB.devoluciones || []).filter(d => {
+            const f = d.fecha || '';
             return filtro === 'TODOS' || f.startsWith(filtro);
         });
 
@@ -1374,12 +1480,28 @@
                     <td>${v.cantidad || 1}</td>
                     <td><strong>${formatoMoneda(montoVal)}</strong></td>
                     <td>${metodoVal}</td>
+                    <td style="font-size:0.8rem; color:var(--text-secondary);">${escaparTexto(v.comentario)}</td>
                     <td>
                         <div class="action-btns">
                             <button class="btn btn-warning" onclick="abrirModalEditarVenta(${v.id})">✏️</button>
                             <button class="btn btn-danger" onclick="eliminarVenta(${v.id})">🗑️</button>
                         </div>
                     </td>
+                </tr>
+            `;
+        });
+
+        devolucionesFiltradas.forEach(d => {
+            const fechaMostrar = d.fecha ? (typeof d.fecha === 'string' && d.fecha.includes('T') ? new Date(d.fecha).toLocaleString('es-CO') : d.fecha) : 'Sin fecha';
+
+            tbodyDevoluciones.innerHTML += `
+                <tr>
+                    <td style="font-size:0.75rem;">${fechaMostrar}</td>
+                    <td>${d.prodNombre || 'Sin Nombre'}</td>
+                    <td>${d.cantidad || 1}</td>
+                    <td><strong style="color:var(--danger);">${formatoMoneda(d.monto)}</strong></td>
+                    <td>${d.metodo || 'Efectivo'}</td>
+                    <td style="font-size:0.8rem; color:var(--text-secondary);">${escaparTexto(d.comentario)}</td>
                 </tr>
             `;
         });
@@ -1395,6 +1517,7 @@
                     <td>${g.concepto || 'Gasto'}</td>
                     <td><strong style="color:var(--danger);">${formatoMoneda(montoVal)}</strong></td>
                     <td>${metodoVal}</td>
+                    <td style="font-size:0.8rem; color:var(--text-secondary);">${escaparTexto(g.comentario)}</td>
                 </tr>
             `;
         });
