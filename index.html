@@ -24,6 +24,7 @@
             --success: #2e7d32;
             --danger: #c62828;
             --warning: #f57c00;
+            --accent: #ffb400; /* Dorado, misma familia cálida del logo */
         }
 
         * {
@@ -149,6 +150,15 @@
 
         button.btn-warning {
             background-color: var(--warning);
+        }
+
+        button.btn-accent {
+            background-color: var(--accent);
+            color: #1a1000;
+        }
+
+        button.btn-accent:hover {
+            background-color: #e0a000;
         }
 
         .btn-group {
@@ -512,6 +522,7 @@
                                 <th>Concepto</th>
                                 <th>Monto</th>
                                 <th>Método</th>
+                                <th>Acción</th>
                             </tr>
                         </thead>
                         <tbody id="tabla-historial-gastos"></tbody>
@@ -523,11 +534,15 @@
         <!-- GRÁFICAS -->
         <section id="tab-graficas" class="tab-content">
             <div class="card">
+                <h2>Filtrar Gráficas por Mes</h2>
+                <select id="filtro-mes-graficas" onchange="renderizarGraficas()"></select>
+            </div>
+            <div class="card">
                 <h3>Productos Más Vendidos</h3>
                 <canvas id="chartProductos"></canvas>
             </div>
             <div class="card">
-                <h3>Ventas por Día (Mes Actual)</h3>
+                <h3>Ventas por Día</h3>
                 <canvas id="chartVentasDia"></canvas>
             </div>
             <div class="card">
@@ -608,6 +623,45 @@
         </div>
     </div>
 
+    <!-- MODAL EDITAR GASTO / COMPRA -->
+    <div id="modal-editar-gasto" class="modal">
+        <div class="modal-content">
+            <h2 style="color:var(--primary); margin-bottom:15px;">Editar Gasto / Compra</h2>
+            <input type="hidden" id="edit-gasto-id">
+
+            <div class="checkbox-container">
+                <input type="checkbox" id="edit-gasto-es-stock" onchange="toggleEditGastoStock()">
+                <label for="edit-gasto-es-stock">¿Es una compra de stock / mercadería?</label>
+            </div>
+
+            <div id="edit-gasto-simple-fields">
+                <label style="font-size:0.8rem; color:var(--text-secondary);">Concepto:</label>
+                <input type="text" id="edit-gasto-concepto" placeholder="Concepto del gasto o compra">
+            </div>
+
+            <div id="edit-gasto-stock-fields" style="display:none;">
+                <label style="font-size:0.8rem; color:var(--text-secondary);">Producto:</label>
+                <select id="edit-gasto-producto" onchange="autofillEditGastoMonto()"></select>
+                <label style="font-size:0.8rem; color:var(--text-secondary);">Cantidad de unidades:</label>
+                <input type="number" id="edit-gasto-cantidad-stock" oninput="autofillEditGastoMonto()">
+            </div>
+
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Monto Total Pagado ($):</label>
+            <input type="number" id="edit-gasto-monto">
+
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Método de Pago:</label>
+            <select id="edit-gasto-metodo">
+                <option value="Efectivo">Efectivo</option>
+                <option value="Nequi">Nequi</option>
+            </select>
+
+            <div class="btn-group">
+                <button class="btn" onclick="guardarEdicionGasto()">Guardar Cambios</button>
+                <button class="btn btn-danger" onclick="cerrarModalEditarGasto()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- NAVEGACIÓN -->
     <nav>
         <button class="nav-btn active" onclick="cambiarTab('tab-inventario', this)">Inventario</button>
@@ -653,6 +707,19 @@
             return '$ ' + Number(valor || 0).toLocaleString('es-CO');
         }
 
+        // Devuelve un identificador "YYYY-MM" en HORA LOCAL a partir de una fecha
+        // ISO (o de un objeto Date). Se usa tanto para construir el filtro de meses
+        // como para decidir a qué mes pertenece cada venta/gasto, así ambos
+        // procesos quedan siempre sincronizados y usan el mismo criterio de fecha.
+        function obtenerAnioMesLocal(fechaValor) {
+            if (!fechaValor) return null;
+            const d = new Date(fechaValor);
+            if (isNaN(d.getTime())) return null;
+            const anio = d.getFullYear();
+            const mes = String(d.getMonth() + 1).padStart(2, '0');
+            return `${anio}-${mes}`;
+        }
+
         // Conectar eventos en tiempo real para múltiples dispositivos
         firebase.auth().onAuthStateChanged((user) => {
             if (user) {
@@ -693,7 +760,10 @@
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             document.getElementById(tabId).classList.add('active');
             element.classList.add('active');
-            if(tabId === 'tab-graficas') renderizarGraficas();
+            if(tabId === 'tab-graficas') {
+                cargarFiltroMeses();
+                renderizarGraficas();
+            }
         }
 
         function toggleBasePanel() {
@@ -1066,6 +1136,8 @@
                 const esStock = document.getElementById('gasto-es-stock').checked;
                 const montoVal = parseFloat(document.getElementById('gasto-monto').value) || 0;
                 let concepto = '';
+                let prodIdGuardar = null;
+                let cantGuardar = null;
 
                 if (montoVal <= 0) return alert('Ingresa un monto válido');
 
@@ -1079,6 +1151,8 @@
 
                     prod.cantidad += cant;
                     concepto = `Compra Stock: ${prod.nombre} (+${cant})`;
+                    prodIdGuardar = prod.id;
+                    cantGuardar = cant;
                 } else {
                     concepto = document.getElementById('gasto-concepto').value;
                     if (!concepto) return alert('Ingresa un concepto del gasto');
@@ -1092,7 +1166,10 @@
                     concepto: concepto,
                     monto: montoVal,
                     metodo: metodoVal,
-                    fecha: fechaIso
+                    fecha: fechaIso,
+                    esStock: esStock,
+                    prodId: prodIdGuardar,
+                    cantidadStock: cantGuardar
                 });
             }
 
@@ -1214,33 +1291,190 @@
             alert('Venta actualizada correctamente');
         }
 
+        /* --- EDICIÓN Y ELIMINACIÓN DE GASTOS / COMPRAS --- */
+        function eliminarGasto(id) {
+            if (!confirm('¿Estás seguro de eliminar este gasto/compra? Esto reajustará la caja y el inventario si aplica.')) return;
+
+            const index = DB.gastos.findIndex(g => g.id === id);
+            if (index === -1) return;
+
+            const gasto = DB.gastos[index];
+            const montoGasto = gasto.monto !== undefined ? gasto.monto : (gasto.montoTotal || 0);
+            const metodoGasto = gasto.metodo || gasto.metodoPago || 'Efectivo';
+
+            // Devolver el dinero a la caja (el gasto lo había restado)
+            if (metodoGasto === 'Efectivo') {
+                DB.caja.efectivo = (DB.caja.efectivo || 0) + montoGasto;
+            } else {
+                DB.caja.nequi = (DB.caja.nequi || 0) + montoGasto;
+            }
+
+            // Si era compra de stock, revertir el inventario agregado
+            if (gasto.esStock && gasto.prodId) {
+                const prod = DB.inventario.find(p => p.id === gasto.prodId);
+                if (prod) prod.cantidad -= (gasto.cantidadStock || 0);
+            }
+
+            DB.gastos.splice(index, 1);
+
+            guardarDB();
+            alert('Gasto/compra eliminado y saldos/inventario reajustados.');
+        }
+
+        function toggleEditGastoStock() {
+            const esStock = document.getElementById('edit-gasto-es-stock').checked;
+            document.getElementById('edit-gasto-simple-fields').style.display = esStock ? 'none' : 'block';
+            document.getElementById('edit-gasto-stock-fields').style.display = esStock ? 'block' : 'none';
+        }
+
+        function autofillEditGastoMonto() {
+            const prodId = parseInt(document.getElementById('edit-gasto-producto').value);
+            const cant = parseInt(document.getElementById('edit-gasto-cantidad-stock').value) || 1;
+            const prod = DB.inventario.find(p => p.id === prodId);
+            if (prod) {
+                document.getElementById('edit-gasto-monto').value = prod.costo * cant;
+            }
+        }
+
+        function abrirModalEditarGasto(id) {
+            const gasto = DB.gastos.find(g => g.id === id);
+            if (!gasto) return;
+
+            const selectProd = document.getElementById('edit-gasto-producto');
+            selectProd.innerHTML = '';
+            DB.inventario.forEach(p => {
+                selectProd.innerHTML += `<option value="${p.id}">${p.nombre} (Costo: ${formatoMoneda(p.costo)})</option>`;
+            });
+
+            document.getElementById('edit-gasto-id').value = gasto.id;
+            document.getElementById('edit-gasto-es-stock').checked = !!gasto.esStock;
+            document.getElementById('edit-gasto-concepto').value = gasto.esStock ? '' : (gasto.concepto || '');
+            if (gasto.esStock && gasto.prodId) {
+                document.getElementById('edit-gasto-producto').value = gasto.prodId;
+            }
+            document.getElementById('edit-gasto-cantidad-stock').value = gasto.cantidadStock || 1;
+            document.getElementById('edit-gasto-monto').value = gasto.monto !== undefined ? gasto.monto : (gasto.montoTotal || 0);
+            document.getElementById('edit-gasto-metodo').value = gasto.metodo || gasto.metodoPago || 'Efectivo';
+
+            toggleEditGastoStock();
+            document.getElementById('modal-editar-gasto').style.display = 'flex';
+        }
+
+        function cerrarModalEditarGasto() {
+            document.getElementById('modal-editar-gasto').style.display = 'none';
+        }
+
+        function guardarEdicionGasto() {
+            const id = parseInt(document.getElementById('edit-gasto-id').value);
+            const gasto = DB.gastos.find(g => g.id === id);
+            if (!gasto) return;
+
+            const nuevoEsStock = document.getElementById('edit-gasto-es-stock').checked;
+            const nuevoMonto = parseFloat(document.getElementById('edit-gasto-monto').value) || 0;
+            const nuevoMetodo = document.getElementById('edit-gasto-metodo').value;
+
+            if (nuevoMonto <= 0) return alert('Ingresa un monto válido');
+
+            // Revertir efecto anterior en caja
+            const montoAntiguo = gasto.monto !== undefined ? gasto.monto : (gasto.montoTotal || 0);
+            const metodoAntiguo = gasto.metodo || gasto.metodoPago || 'Efectivo';
+            if (metodoAntiguo === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) + montoAntiguo;
+            else DB.caja.nequi = (DB.caja.nequi || 0) + montoAntiguo;
+
+            // Revertir efecto anterior en inventario si era stock
+            if (gasto.esStock && gasto.prodId) {
+                const prodAntiguo = DB.inventario.find(p => p.id === gasto.prodId);
+                if (prodAntiguo) prodAntiguo.cantidad -= (gasto.cantidadStock || 0);
+            }
+
+            let nuevoConcepto = '';
+            let nuevoProdId = null;
+            let nuevaCantStock = null;
+
+            if (nuevoEsStock) {
+                const prodId = parseInt(document.getElementById('edit-gasto-producto').value);
+                const cant = parseInt(document.getElementById('edit-gasto-cantidad-stock').value) || 0;
+                const prod = DB.inventario.find(p => p.id === prodId);
+
+                if (!prod) return alert('Selecciona un producto para reposición');
+                if (cant <= 0) return alert('La cantidad debe ser mayor a cero');
+
+                prod.cantidad += cant;
+                nuevoConcepto = `Compra Stock: ${prod.nombre} (+${cant})`;
+                nuevoProdId = prod.id;
+                nuevaCantStock = cant;
+            } else {
+                nuevoConcepto = document.getElementById('edit-gasto-concepto').value;
+                if (!nuevoConcepto) return alert('Ingresa un concepto del gasto');
+            }
+
+            // Aplicar nuevo efecto en caja
+            if (nuevoMetodo === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) - nuevoMonto;
+            else DB.caja.nequi = (DB.caja.nequi || 0) - nuevoMonto;
+
+            gasto.concepto = nuevoConcepto;
+            gasto.monto = nuevoMonto;
+            gasto.metodo = nuevoMetodo;
+            gasto.esStock = nuevoEsStock;
+            gasto.prodId = nuevoProdId;
+            gasto.cantidadStock = nuevaCantStock;
+
+            guardarDB();
+            cerrarModalEditarGasto();
+            alert('Gasto/compra actualizado correctamente');
+        }
+
         /* --- HISTORIAL --- */
         function cargarFiltroMeses() {
             const selectMes = document.getElementById('filtro-mes');
-            if(!selectMes) return;
-            const opcionActual = selectMes.value;
-            
-            selectMes.innerHTML = '<option value="TODOS">Todos los meses</option>';
+            const selectMesGraficas = document.getElementById('filtro-mes-graficas');
+            if(!selectMes && !selectMesGraficas) return;
+
+            const opcionActual = selectMes ? selectMes.value : null;
+            const opcionActualGraficas = selectMesGraficas ? selectMesGraficas.value : null;
 
             const mesesSet = new Set();
             [...DB.ventas, ...DB.gastos].forEach(item => {
                 const f = item.fecha || item.isoFecha;
-                if(f && typeof f === 'string') {
-                    const mesAño = f.substring(0, 7);
-                    mesesSet.add(mesAño);
-                }
+                const mesAño = obtenerAnioMesLocal(f);
+                if (mesAño) mesesSet.add(mesAño);
+            });
+            // También consideramos los días de asistencia para que las gráficas
+            // por mes incluyan meses donde solo hubo asistencia registrada.
+            DB.socios.forEach(s => {
+                (s.asistencia || []).forEach(fechaStr => {
+                    const mesAño = obtenerAnioMesDeFechaCorta(fechaStr);
+                    if (mesAño) mesesSet.add(mesAño);
+                });
             });
 
-            Array.from(mesesSet).sort().reverse().forEach(m => {
+            const opcionesHtml = Array.from(mesesSet).sort().reverse().map(m => {
                 const [yyyy, mm] = m.split('-');
-                if(yyyy && mm) {
-                    const fechaObj = new Date(yyyy, mm - 1, 1);
-                    const nombreMes = fechaObj.toLocaleString('es-CO', { month: 'long', year: 'numeric' });
-                    selectMes.innerHTML += `<option value="${m}">${nombreMes.toUpperCase()}</option>`;
-                }
-            });
+                if(!yyyy || !mm) return '';
+                const fechaObj = new Date(yyyy, mm - 1, 1);
+                const nombreMes = fechaObj.toLocaleString('es-CO', { month: 'long', year: 'numeric' });
+                return `<option value="${m}">${nombreMes.toUpperCase()}</option>`;
+            }).join('');
 
-            if(opcionActual) selectMes.value = opcionActual;
+            if (selectMes) {
+                selectMes.innerHTML = '<option value="TODOS">Todos los meses</option>' + opcionesHtml;
+                if (opcionActual) selectMes.value = opcionActual;
+            }
+            if (selectMesGraficas) {
+                selectMesGraficas.innerHTML = '<option value="TODOS">Todos los meses</option>' + opcionesHtml;
+                if (opcionActualGraficas) selectMesGraficas.value = opcionActualGraficas;
+            }
+        }
+
+        // Convierte una fecha corta tipo "DD/MM/YYYY" (formato usado en asistencia,
+        // vía toLocaleDateString('es-CO')) a un identificador "YYYY-MM" en hora local.
+        function obtenerAnioMesDeFechaCorta(fechaStr) {
+            if (!fechaStr || typeof fechaStr !== 'string') return null;
+            const partes = fechaStr.split('/');
+            if (partes.length !== 3) return null;
+            const [dd, mm, yyyy] = partes;
+            if (!dd || !mm || !yyyy) return null;
+            return `${yyyy}-${mm.padStart(2, '0')}`;
         }
 
         function cargarHistorial() {
@@ -1253,12 +1487,12 @@
 
             const ventasFiltradas = DB.ventas.filter(v => {
                 const f = v.fecha || v.isoFecha || '';
-                return filtro === 'TODOS' || f.startsWith(filtro);
+                return filtro === 'TODOS' || obtenerAnioMesLocal(f) === filtro;
             });
 
             const gastosFiltrados = DB.gastos.filter(g => {
                 const f = g.fecha || g.isoFecha || '';
-                return filtro === 'TODOS' || f.startsWith(filtro);
+                return filtro === 'TODOS' || obtenerAnioMesLocal(f) === filtro;
             });
 
             ventasFiltradas.forEach(v => {
@@ -1295,6 +1529,12 @@
                         <td>${g.concepto || 'Gasto'}</td>
                         <td><strong style="color:var(--danger);">${formatoMoneda(montoVal)}</strong></td>
                         <td>${metodoVal}</td>
+                        <td>
+                            <div class="action-btns">
+                                <button class="btn btn-warning" onclick="abrirModalEditarGasto(${g.id})">✏️</button>
+                                <button class="btn btn-danger" onclick="eliminarGasto(${g.id})">🗑️</button>
+                            </div>
+                        </td>
                     </tr>
                 `;
             });
@@ -1302,9 +1542,21 @@
 
         /* --- GRÁFICAS --- */
         function renderizarGraficas() {
+            const selectMesGraficas = document.getElementById('filtro-mes-graficas');
+            const filtro = selectMesGraficas ? selectMesGraficas.value : 'TODOS';
+
+            const ventasFiltradas = DB.ventas.filter(v => {
+                const f = v.fecha || v.isoFecha || '';
+                return filtro === 'TODOS' || obtenerAnioMesLocal(f) === filtro;
+            });
+            const gastosFiltrados = DB.gastos.filter(g => {
+                const f = g.fecha || g.isoFecha || '';
+                return filtro === 'TODOS' || obtenerAnioMesLocal(f) === filtro;
+            });
+
             const contexProd = document.getElementById('chartProductos').getContext('2d');
             const prodConteo = {};
-            DB.ventas.forEach(v => {
+            ventasFiltradas.forEach(v => {
                 const nombre = v.prodNombre || v.productoNombre || 'Producto';
                 const cant = v.cantidad || 1;
                 prodConteo[nombre] = (prodConteo[nombre] || 0) + cant;
@@ -1326,7 +1578,7 @@
 
             const contexDia = document.getElementById('chartVentasDia').getContext('2d');
             const ventasDia = {};
-            DB.ventas.forEach(v => {
+            ventasFiltradas.forEach(v => {
                 let dia = 'Fecha';
                 if(v.fecha && typeof v.fecha === 'string') {
                     dia = v.fecha.includes('T') ? new Date(v.fecha).toLocaleDateString('es-CO') : v.fecha.split(',')[0];
@@ -1351,8 +1603,8 @@
             });
 
             const contexFin = document.getElementById('chartFinanzas').getContext('2d');
-            const totalVentas = DB.ventas.reduce((sum, v) => sum + (v.monto !== undefined ? v.monto : (v.montoTotal || 0)), 0);
-            const totalGastos = DB.gastos.reduce((sum, g) => sum + (g.monto !== undefined ? g.monto : (g.montoTotal || 0)), 0);
+            const totalVentas = ventasFiltradas.reduce((sum, v) => sum + (v.monto !== undefined ? v.monto : (v.montoTotal || 0)), 0);
+            const totalGastos = gastosFiltrados.reduce((sum, g) => sum + (g.monto !== undefined ? g.monto : (g.montoTotal || 0)), 0);
             const ganancia = totalVentas - totalGastos;
 
             if(charts.fin) charts.fin.destroy();
@@ -1370,7 +1622,11 @@
 
             const contexAsis = document.getElementById('chartAsistencia').getContext('2d');
             const nombresSocios = DB.socios.map(s => s.nombre);
-            const diasAsistidos = DB.socios.map(s => (s.asistencia ? s.asistencia.length : 0));
+            const diasAsistidos = DB.socios.map(s => {
+                if (!s.asistencia) return 0;
+                if (filtro === 'TODOS') return s.asistencia.length;
+                return s.asistencia.filter(fechaStr => obtenerAnioMesDeFechaCorta(fechaStr) === filtro).length;
+            });
 
             if(charts.asis) charts.asis.destroy();
             charts.asis = new Chart(contexAsis, {
@@ -1423,7 +1679,7 @@
                         <div style="margin-top:15px;">
                             <label style="font-size:0.8rem; color:var(--text-secondary);">Notas / Observaciones:</label>
                             <textarea id="notas-socio-${s.id}" placeholder="Escribe notas sobre este socio...">${notasTexto}</textarea>
-                            <button class="btn btn-warning" style="padding:6px; font-size:0.85rem;" onclick="guardarNotaSocio(${s.id})">Guardar Nota</button>
+                            <button class="btn btn-accent" style="padding:6px; font-size:0.85rem;" onclick="guardarNotaSocio(${s.id})">Guardar Nota</button>
                         </div>
                     </div>
                 `;
