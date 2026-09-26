@@ -616,6 +616,9 @@
                 <option value="Nequi">Nequi</option>
             </select>
 
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Fecha y Hora:</label>
+            <input type="datetime-local" id="edit-venta-fecha">
+
             <div class="btn-group">
                 <button class="btn" onclick="guardarEdicionVenta()">Guardar Cambios</button>
                 <button class="btn btn-danger" onclick="cerrarModalEditarVenta()">Cancelar</button>
@@ -654,6 +657,9 @@
                 <option value="Efectivo">Efectivo</option>
                 <option value="Nequi">Nequi</option>
             </select>
+
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Fecha y Hora:</label>
+            <input type="datetime-local" id="edit-gasto-fecha">
 
             <div class="btn-group">
                 <button class="btn" onclick="guardarEdicionGasto()">Guardar Cambios</button>
@@ -718,6 +724,30 @@
             const anio = d.getFullYear();
             const mes = String(d.getMonth() + 1).padStart(2, '0');
             return `${anio}-${mes}`;
+        }
+
+        // Convierte una fecha ISO a un valor apto para <input type="datetime-local">
+        // (formato "YYYY-MM-DDTHH:mm") usando la hora LOCAL del navegador.
+        function isoADatetimeLocalInput(fechaIso) {
+            if (!fechaIso) return '';
+            const d = new Date(fechaIso);
+            if (isNaN(d.getTime())) return '';
+            const pad = (n) => String(n).padStart(2, '0');
+            const yyyy = d.getFullYear();
+            const mm = pad(d.getMonth() + 1);
+            const dd = pad(d.getDate());
+            const hh = pad(d.getHours());
+            const mi = pad(d.getMinutes());
+            return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+        }
+
+        // Convierte el valor de un <input type="datetime-local"> a un ISO string
+        // completo, para guardarlo igual que el resto de fechas de la app.
+        function datetimeLocalInputAIso(valorInput, fechaOriginalIso) {
+            if (!valorInput) return fechaOriginalIso || new Date().toISOString();
+            const d = new Date(valorInput);
+            if (isNaN(d.getTime())) return fechaOriginalIso || new Date().toISOString();
+            return d.toISOString();
         }
 
         // Conectar eventos en tiempo real para múltiples dispositivos
@@ -1224,6 +1254,7 @@
             document.getElementById('edit-venta-cantidad').value = venta.cantidad || 1;
             document.getElementById('edit-venta-monto').value = venta.monto !== undefined ? venta.monto : (venta.montoTotal || 0);
             document.getElementById('edit-venta-metodo').value = venta.metodo || venta.metodoPago || 'Efectivo';
+            document.getElementById('edit-venta-fecha').value = isoADatetimeLocalInput(venta.fecha || venta.isoFecha);
 
             document.getElementById('modal-editar-venta').style.display = 'flex';
         }
@@ -1250,6 +1281,7 @@
             const nuevaCant = parseInt(document.getElementById('edit-venta-cantidad').value) || 0;
             const nuevoMonto = parseFloat(document.getElementById('edit-venta-monto').value) || 0;
             const nuevoMetodo = document.getElementById('edit-venta-metodo').value;
+            const nuevaFechaInput = document.getElementById('edit-venta-fecha').value;
 
             if (nuevaCant <= 0) return alert('La cantidad debe ser mayor a 0');
             if (nuevoMonto < 0) return alert('El monto no puede ser negativo');
@@ -1285,6 +1317,7 @@
             venta.monto = nuevoMonto;
             venta.metodo = nuevoMetodo;
             venta.costoUnitario = nuevoProd.costo || 0;
+            venta.fecha = datetimeLocalInputAIso(nuevaFechaInput, venta.fecha);
 
             guardarDB();
             cerrarModalEditarVenta();
@@ -1355,6 +1388,7 @@
             document.getElementById('edit-gasto-cantidad-stock').value = gasto.cantidadStock || 1;
             document.getElementById('edit-gasto-monto').value = gasto.monto !== undefined ? gasto.monto : (gasto.montoTotal || 0);
             document.getElementById('edit-gasto-metodo').value = gasto.metodo || gasto.metodoPago || 'Efectivo';
+            document.getElementById('edit-gasto-fecha').value = isoADatetimeLocalInput(gasto.fecha || gasto.isoFecha);
 
             toggleEditGastoStock();
             document.getElementById('modal-editar-gasto').style.display = 'flex';
@@ -1372,6 +1406,7 @@
             const nuevoEsStock = document.getElementById('edit-gasto-es-stock').checked;
             const nuevoMonto = parseFloat(document.getElementById('edit-gasto-monto').value) || 0;
             const nuevoMetodo = document.getElementById('edit-gasto-metodo').value;
+            const nuevaFechaInput = document.getElementById('edit-gasto-fecha').value;
 
             if (nuevoMonto <= 0) return alert('Ingresa un monto válido');
 
@@ -1418,6 +1453,7 @@
             gasto.esStock = nuevoEsStock;
             gasto.prodId = nuevoProdId;
             gasto.cantidadStock = nuevaCantStock;
+            gasto.fecha = datetimeLocalInputAIso(nuevaFechaInput, gasto.fecha);
 
             guardarDB();
             cerrarModalEditarGasto();
