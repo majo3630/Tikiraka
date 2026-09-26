@@ -442,6 +442,9 @@
                     <option value="gasto">Gasto / Compra</option>
                 </select>
 
+                <label style="font-size:0.8rem; color:var(--text-secondary);">Fecha y Hora de la Operación:</label>
+                <input type="datetime-local" id="operacion-fecha">
+
                 <!-- Formulario Venta -->
                 <div id="form-venta">
                     <select id="venta-producto" onchange="autofillPrecioVenta()"></select>
@@ -726,28 +729,35 @@
             return `${anio}-${mes}`;
         }
 
-        // Convierte una fecha ISO a un valor apto para <input type="datetime-local">
-        // (formato "YYYY-MM-DDTHH:mm") usando la hora LOCAL del navegador.
-        function isoADatetimeLocalInput(fechaIso) {
-            if (!fechaIso) return '';
-            const d = new Date(fechaIso);
-            if (isNaN(d.getTime())) return '';
-            const pad = (n) => String(n).padStart(2, '0');
-            const yyyy = d.getFullYear();
-            const mm = pad(d.getMonth() + 1);
-            const dd = pad(d.getDate());
-            const hh = pad(d.getHours());
-            const mi = pad(d.getMinutes());
-            return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+        // Convierte un valor de <input type="datetime-local"> ("YYYY-MM-DDTHH:MM")
+        // a un ISOString válido en hora local, o devuelve la fecha/hora actual si
+        // el campo viene vacío. Así toda operación siempre queda con una fecha.
+        function obtenerFechaOperacionISO(inputId) {
+            const valor = document.getElementById(inputId) ? document.getElementById(inputId).value : '';
+            if (!valor) return new Date().toISOString();
+            const d = new Date(valor);
+            if (isNaN(d.getTime())) return new Date().toISOString();
+            return d.toISOString();
         }
 
-        // Convierte el valor de un <input type="datetime-local"> a un ISO string
-        // completo, para guardarlo igual que el resto de fechas de la app.
-        function datetimeLocalInputAIso(valorInput, fechaOriginalIso) {
-            if (!valorInput) return fechaOriginalIso || new Date().toISOString();
-            const d = new Date(valorInput);
-            if (isNaN(d.getTime())) return fechaOriginalIso || new Date().toISOString();
-            return d.toISOString();
+        // Formatea una fecha ISO al formato "YYYY-MM-DDTHH:MM" que requiere
+        // <input type="datetime-local"> para mostrar la fecha en hora local.
+        function isoAFechaLocalInput(fechaIso) {
+            const d = fechaIso ? new Date(fechaIso) : new Date();
+            if (isNaN(d.getTime())) return '';
+            const anio = d.getFullYear();
+            const mes = String(d.getMonth() + 1).padStart(2, '0');
+            const dia = String(d.getDate()).padStart(2, '0');
+            const hora = String(d.getHours()).padStart(2, '0');
+            const min = String(d.getMinutes()).padStart(2, '0');
+            return `${anio}-${mes}-${dia}T${hora}:${min}`;
+        }
+
+        // Rellena el campo de fecha/hora de "Registrar Operación" con el momento
+        // actual, para que siempre tenga un valor por defecto editable.
+        function inicializarFechaOperacion() {
+            const input = document.getElementById('operacion-fecha');
+            if (input) input.value = isoAFechaLocalInput(new Date().toISOString());
         }
 
         // Conectar eventos en tiempo real para múltiples dispositivos
@@ -793,6 +803,9 @@
             if(tabId === 'tab-graficas') {
                 cargarFiltroMeses();
                 renderizarGraficas();
+            }
+            if(tabId === 'tab-caja') {
+                inicializarFechaOperacion();
             }
         }
 
@@ -1102,12 +1115,15 @@
             document.getElementById('gasto-producto').value = '';
             document.getElementById('gasto-cantidad-stock').value = '1';
             document.getElementById('gasto-monto').value = '';
+
+            // Fecha: reiniciar al momento actual para la próxima operación
+            inicializarFechaOperacion();
         }
 
         function procesarOperacion() {
             const tipo = document.getElementById('tipo-operacion').value;
             const metodoVal = document.getElementById('metodo-pago').value;
-            const fechaIso = new Date().toISOString();
+            const fechaIso = obtenerFechaOperacionISO('operacion-fecha');
 
             if (tipo === 'venta') {
                 const prodId = parseInt(document.getElementById('venta-producto').value);
@@ -1254,7 +1270,7 @@
             document.getElementById('edit-venta-cantidad').value = venta.cantidad || 1;
             document.getElementById('edit-venta-monto').value = venta.monto !== undefined ? venta.monto : (venta.montoTotal || 0);
             document.getElementById('edit-venta-metodo').value = venta.metodo || venta.metodoPago || 'Efectivo';
-            document.getElementById('edit-venta-fecha').value = isoADatetimeLocalInput(venta.fecha || venta.isoFecha);
+            document.getElementById('edit-venta-fecha').value = isoAFechaLocalInput(venta.fecha || venta.isoFecha);
 
             document.getElementById('modal-editar-venta').style.display = 'flex';
         }
@@ -1281,7 +1297,7 @@
             const nuevaCant = parseInt(document.getElementById('edit-venta-cantidad').value) || 0;
             const nuevoMonto = parseFloat(document.getElementById('edit-venta-monto').value) || 0;
             const nuevoMetodo = document.getElementById('edit-venta-metodo').value;
-            const nuevaFechaInput = document.getElementById('edit-venta-fecha').value;
+            const nuevaFechaIso = obtenerFechaOperacionISO('edit-venta-fecha');
 
             if (nuevaCant <= 0) return alert('La cantidad debe ser mayor a 0');
             if (nuevoMonto < 0) return alert('El monto no puede ser negativo');
@@ -1317,7 +1333,7 @@
             venta.monto = nuevoMonto;
             venta.metodo = nuevoMetodo;
             venta.costoUnitario = nuevoProd.costo || 0;
-            venta.fecha = datetimeLocalInputAIso(nuevaFechaInput, venta.fecha);
+            venta.fecha = nuevaFechaIso;
 
             guardarDB();
             cerrarModalEditarVenta();
@@ -1388,7 +1404,7 @@
             document.getElementById('edit-gasto-cantidad-stock').value = gasto.cantidadStock || 1;
             document.getElementById('edit-gasto-monto').value = gasto.monto !== undefined ? gasto.monto : (gasto.montoTotal || 0);
             document.getElementById('edit-gasto-metodo').value = gasto.metodo || gasto.metodoPago || 'Efectivo';
-            document.getElementById('edit-gasto-fecha').value = isoADatetimeLocalInput(gasto.fecha || gasto.isoFecha);
+            document.getElementById('edit-gasto-fecha').value = isoAFechaLocalInput(gasto.fecha || gasto.isoFecha);
 
             toggleEditGastoStock();
             document.getElementById('modal-editar-gasto').style.display = 'flex';
@@ -1406,7 +1422,7 @@
             const nuevoEsStock = document.getElementById('edit-gasto-es-stock').checked;
             const nuevoMonto = parseFloat(document.getElementById('edit-gasto-monto').value) || 0;
             const nuevoMetodo = document.getElementById('edit-gasto-metodo').value;
-            const nuevaFechaInput = document.getElementById('edit-gasto-fecha').value;
+            const nuevaFechaIso = obtenerFechaOperacionISO('edit-gasto-fecha');
 
             if (nuevoMonto <= 0) return alert('Ingresa un monto válido');
 
@@ -1453,7 +1469,7 @@
             gasto.esStock = nuevoEsStock;
             gasto.prodId = nuevoProdId;
             gasto.cantidadStock = nuevaCantStock;
-            gasto.fecha = datetimeLocalInputAIso(nuevaFechaInput, gasto.fecha);
+            gasto.fecha = nuevaFechaIso;
 
             guardarDB();
             cerrarModalEditarGasto();
@@ -1756,6 +1772,9 @@
                 alert(`Nota guardada para ${socio.nombre}`);
             }
         }
+
+        // Inicializar el campo de fecha de operación al cargar la página
+        inicializarFechaOperacion();
     </script>
 </body>
 </html>
