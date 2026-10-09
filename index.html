@@ -288,6 +288,29 @@
             margin-bottom: 10px;
         }
 
+        /* Aviso de venta histórica */
+        .aviso-historica {
+            background-color: #1a1500;
+            border-left: 4px solid #ffd700;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            color: #ffd700;
+            margin-bottom: 10px;
+        }
+
+        .tag-historica {
+            display: inline-block;
+            background-color: #ffd700;
+            color: #1a1000;
+            font-size: 0.65rem;
+            font-weight: bold;
+            padding: 1px 6px;
+            border-radius: 8px;
+            margin-left: 5px;
+            white-space: nowrap;
+        }
+
         /* MODALES */
         .modal {
             display: none;
@@ -308,6 +331,8 @@
             border-radius: 10px;
             width: 90%;
             max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
             border: 1px solid var(--border-color);
         }
 
@@ -438,6 +463,7 @@
                 <h2>Registrar Operación</h2>
                 <select id="tipo-operacion" onchange="toggleOperacion()">
                     <option value="venta">Venta</option>
+                    <option value="venta-historica">Venta de otro mes (sin afectar caja)</option>
                     <option value="devolucion">Devolución</option>
                     <option value="gasto">Gasto / Compra</option>
                 </select>
@@ -453,9 +479,42 @@
                     <input type="number" id="venta-monto" placeholder="Monto total ($)">
                 </div>
 
+                <!-- Formulario Venta Histórica (otros meses) -->
+                <div id="form-venta-historica" style="display:none;">
+                    <div class="aviso-historica">
+                        Esta venta solo queda en el historial y las gráficas. NO cambia el dinero en caja y NO cambia el stock del inventario. Elige arriba la fecha del mes en que se vendió.
+                    </div>
+
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="hist-es-manual" onchange="toggleHistoricaManual()">
+                        <label for="hist-es-manual">Producto que ya no existe (escribir el nombre)</label>
+                    </div>
+
+                    <div id="hist-campo-select">
+                        <select id="hist-producto" onchange="autofillPrecioHistorica()"></select>
+                    </div>
+
+                    <div id="hist-campo-manual" style="display:none;">
+                        <input type="text" id="hist-nombre-manual" placeholder="Nombre del producto (escrito a mano)">
+                    </div>
+
+                    <input type="number" id="hist-cantidad" placeholder="Cantidad vendida" value="1" oninput="autofillPrecioHistorica()">
+                    <label style="font-size:0.8rem; color:var(--text-secondary);">Monto total de la venta ($):</label>
+                    <input type="number" id="hist-monto" placeholder="Monto total ($)">
+                </div>
+
                 <!-- Formulario Devolución -->
                 <div id="form-devolucion" style="display:none;">
-                    <select id="devolucion-producto" onchange="autofillPrecioDevolucion()"></select>
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="devolucion-es-manual" onchange="toggleDevolucionManual()">
+                        <label for="devolucion-es-manual">Producto que ya no existe (escribir el nombre)</label>
+                    </div>
+                    <div id="devolucion-campo-select">
+                        <select id="devolucion-producto" onchange="autofillPrecioDevolucion()"></select>
+                    </div>
+                    <div id="devolucion-campo-manual" style="display:none;">
+                        <input type="text" id="devolucion-nombre-manual" placeholder="Nombre del producto (escrito a mano)">
+                    </div>
                     <input type="number" id="devolucion-cantidad" placeholder="Cantidad devuelta" value="1" oninput="autofillPrecioDevolucion()">
                     <label style="font-size:0.8rem; color:var(--text-secondary);">Monto de Dinero Ingresado por Devolución ($):</label>
                     <input type="number" id="devolucion-monto" placeholder="Monto total ($)">
@@ -665,9 +724,22 @@
         <div class="modal-content">
             <h2 style="color:var(--primary); margin-bottom:15px;">Editar Venta Registrada</h2>
             <input type="hidden" id="edit-venta-id">
+
+            <div id="edit-venta-aviso-historica" class="aviso-historica" style="display:none;">
+                Venta de otro mes: editarla NO cambia la caja ni el stock.
+            </div>
             
-            <label style="font-size:0.8rem; color:var(--text-secondary);">Producto:</label>
-            <select id="edit-venta-producto" onchange="autofillEditVentaPrecio()"></select>
+            <!-- Venta normal: producto del inventario -->
+            <div id="edit-venta-campo-select">
+                <label style="font-size:0.8rem; color:var(--text-secondary);">Producto:</label>
+                <select id="edit-venta-producto" onchange="autofillEditVentaPrecio()"></select>
+            </div>
+
+            <!-- Venta histórica: nombre escrito -->
+            <div id="edit-venta-campo-nombre" style="display:none;">
+                <label style="font-size:0.8rem; color:var(--text-secondary);">Nombre del producto:</label>
+                <input type="text" id="edit-venta-nombre">
+            </div>
             
             <label style="font-size:0.8rem; color:var(--text-secondary);">Cantidad Vendida:</label>
             <input type="number" id="edit-venta-cantidad" oninput="autofillEditVentaPrecio()">
@@ -935,15 +1007,18 @@
         function renderInventario() {
             const tbody = document.getElementById('tabla-inventario');
             const selectVenta = document.getElementById('venta-producto');
+            const selectHistorica = document.getElementById('hist-producto');
             const selectDevolucion = document.getElementById('devolucion-producto');
             const selectGasto = document.getElementById('gasto-producto');
 
             const valVenta = selectVenta.value;
+            const valHistorica = selectHistorica ? selectHistorica.value : '';
             const valDevolucion = selectDevolucion ? selectDevolucion.value : '';
             const valGasto = selectGasto.value;
 
             tbody.innerHTML = '';
             selectVenta.innerHTML = '<option value="">Selecciona Producto</option>';
+            if (selectHistorica) selectHistorica.innerHTML = '<option value="">Selecciona Producto</option>';
             if (selectDevolucion) selectDevolucion.innerHTML = '<option value="">Selecciona Producto</option>';
             selectGasto.innerHTML = '<option value="">Selecciona Producto</option>';
 
@@ -963,11 +1038,13 @@
                     </tr>
                 `;
                 selectVenta.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
+                if (selectHistorica) selectHistorica.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
                 if (selectDevolucion) selectDevolucion.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
                 selectGasto.innerHTML += `<option value="${p.id}">${p.nombre} (Costo: ${formatoMoneda(p.costo)})</option>`;
             });
 
             if (valVenta) selectVenta.value = valVenta;
+            if (valHistorica && selectHistorica) selectHistorica.value = valHistorica;
             if (valDevolucion && selectDevolucion) selectDevolucion.value = valDevolucion;
             if (valGasto) selectGasto.value = valGasto;
         }
@@ -1122,6 +1199,7 @@
         function toggleOperacion() {
             const tipo = document.getElementById('tipo-operacion').value;
             document.getElementById('form-venta').style.display = tipo === 'venta' ? 'block' : 'none';
+            document.getElementById('form-venta-historica').style.display = tipo === 'venta-historica' ? 'block' : 'none';
             document.getElementById('form-devolucion').style.display = tipo === 'devolucion' ? 'block' : 'none';
             document.getElementById('form-gasto').style.display = tipo === 'gasto' ? 'block' : 'none';
         }
@@ -1130,6 +1208,15 @@
             const esStock = document.getElementById('gasto-es-stock').checked;
             document.getElementById('gasto-simple-fields').style.display = esStock ? 'none' : 'block';
             document.getElementById('gasto-stock-fields').style.display = esStock ? 'block' : 'none';
+        }
+
+        // Alterna entre elegir un producto del inventario o escribir el nombre a mano
+        function toggleHistoricaManual() {
+            const esManual = document.getElementById('hist-es-manual').checked;
+            document.getElementById('hist-campo-select').style.display = esManual ? 'none' : 'block';
+            document.getElementById('hist-campo-manual').style.display = esManual ? 'block' : 'none';
+            document.getElementById('hist-monto').value = '';
+            if (!esManual) autofillPrecioHistorica();
         }
 
         function autofillPrecioVenta() {
@@ -1143,7 +1230,31 @@
             }
         }
 
+        // Rellena el monto de la venta histórica (solo si se eligió un producto del inventario)
+        function autofillPrecioHistorica() {
+            const esManual = document.getElementById('hist-es-manual').checked;
+            if (esManual) return;
+            const prodId = parseInt(document.getElementById('hist-producto').value);
+            const cant = parseInt(document.getElementById('hist-cantidad').value) || 1;
+            const prod = DB.inventario.find(p => p.id === prodId);
+            if (prod) {
+                document.getElementById('hist-monto').value = prod.precio * cant;
+            } else {
+                document.getElementById('hist-monto').value = '';
+            }
+        }
+
+        // Alterna entre elegir un producto del inventario o escribir el nombre a mano (devoluciones)
+        function toggleDevolucionManual() {
+            const esManual = document.getElementById('devolucion-es-manual').checked;
+            document.getElementById('devolucion-campo-select').style.display = esManual ? 'none' : 'block';
+            document.getElementById('devolucion-campo-manual').style.display = esManual ? 'block' : 'none';
+            document.getElementById('devolucion-monto').value = '';
+            if (!esManual) autofillPrecioDevolucion();
+        }
+
         function autofillPrecioDevolucion() {
+            if (document.getElementById('devolucion-es-manual').checked) return;
             const prodId = parseInt(document.getElementById('devolucion-producto').value);
             const cant = parseInt(document.getElementById('devolucion-cantidad').value) || 1;
             const prod = DB.inventario.find(p => p.id === prodId);
@@ -1172,7 +1283,18 @@
             document.getElementById('venta-cantidad').value = '1';
             document.getElementById('venta-monto').value = '';
 
+            // Venta histórica
+            document.getElementById('hist-es-manual').checked = false;
+            toggleHistoricaManual();
+            document.getElementById('hist-producto').value = '';
+            document.getElementById('hist-nombre-manual').value = '';
+            document.getElementById('hist-cantidad').value = '1';
+            document.getElementById('hist-monto').value = '';
+
             // Devolución
+            document.getElementById('devolucion-es-manual').checked = false;
+            toggleDevolucionManual();
+            document.getElementById('devolucion-nombre-manual').value = '';
             document.getElementById('devolucion-producto').value = '';
             document.getElementById('devolucion-cantidad').value = '1';
             document.getElementById('devolucion-monto').value = '';
@@ -1220,32 +1342,96 @@
                     fecha: fechaIso
                 });
 
-            } else if (tipo === 'devolucion') {
-                const prodId = parseInt(document.getElementById('devolucion-producto').value);
-                const cant = parseInt(document.getElementById('devolucion-cantidad').value) || 0;
-                const montoVal = parseFloat(document.getElementById('devolucion-monto').value) || 0;
-                const prod = DB.inventario.find(p => p.id === prodId);
+            } else if (tipo === 'venta-historica') {
+                // VENTA DE OTRO MES: solo queda en el historial.
+                // NO toca la caja y NO toca el stock del inventario.
+                const esManual = document.getElementById('hist-es-manual').checked;
+                const cant = parseInt(document.getElementById('hist-cantidad').value) || 0;
+                const montoVal = parseFloat(document.getElementById('hist-monto').value);
+                const fechaCampo = document.getElementById('operacion-fecha').value;
 
-                if (!prod) return alert('Selecciona un producto válido');
+                let nombreProd = '';
+                let prodIdGuardar = null;
+                let costoUnit = 0;
+
+                if (esManual) {
+                    nombreProd = document.getElementById('hist-nombre-manual').value.trim();
+                    if (!nombreProd) return alert('Escribe el nombre del producto');
+                } else {
+                    const prodId = parseInt(document.getElementById('hist-producto').value);
+                    const prod = DB.inventario.find(p => p.id === prodId);
+                    if (!prod) return alert('Selecciona un producto o marca la opción de escribirlo a mano');
+                    nombreProd = prod.nombre;
+                    prodIdGuardar = prod.id;
+                    costoUnit = prod.costo || 0;
+                }
+
+                if (!fechaCampo) return alert('Elige la fecha en que se hizo la venta');
                 if (cant <= 0) return alert('La cantidad debe ser mayor a cero');
-                if (prod.cantidad < cant) return alert('Stock insuficiente para realizar la devolución');
-
-                // Disminuir stock y aumentar dinero en caja
-                prod.cantidad -= cant;
-
-                if (metodoVal === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) + montoVal;
-                else DB.caja.nequi = (DB.caja.nequi || 0) + montoVal;
+                if (isNaN(montoVal) || montoVal < 0) return alert('Ingresa un monto válido');
 
                 DB.ventas.unshift({
                     id: Date.now(),
-                    prodId: prod.id,
-                    prodNombre: `(Devolución) ${prod.nombre}`,
+                    prodId: prodIdGuardar,
+                    prodNombre: nombreProd,
                     cantidad: cant,
-                    costoUnitario: prod.costo || 0,
+                    costoUnitario: costoUnit,
                     monto: montoVal,
                     metodo: metodoVal,
-                    fecha: fechaIso
+                    fecha: fechaIso,
+                    historica: true
                 });
+
+            } else if (tipo === 'devolucion') {
+                const esManual = document.getElementById('devolucion-es-manual').checked;
+                const cant = parseInt(document.getElementById('devolucion-cantidad').value) || 0;
+                const montoVal = parseFloat(document.getElementById('devolucion-monto').value) || 0;
+
+                if (esManual) {
+                    // Producto escrito a mano: no hay stock que cambiar, la caja sí se ajusta igual
+                    const nombreManual = document.getElementById('devolucion-nombre-manual').value.trim();
+                    if (!nombreManual) return alert('Escribe el nombre del producto');
+                    if (cant <= 0) return alert('La cantidad debe ser mayor a cero');
+
+                    if (metodoVal === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) + montoVal;
+                    else DB.caja.nequi = (DB.caja.nequi || 0) + montoVal;
+
+                    DB.ventas.unshift({
+                        id: Date.now(),
+                        prodId: null,
+                        prodNombre: `(Devolución) ${nombreManual}`,
+                        cantidad: cant,
+                        costoUnitario: 0,
+                        monto: montoVal,
+                        metodo: metodoVal,
+                        fecha: fechaIso,
+                        sinInventario: true
+                    });
+                } else {
+                    const prodId = parseInt(document.getElementById('devolucion-producto').value);
+                    const prod = DB.inventario.find(p => p.id === prodId);
+
+                    if (!prod) return alert('Selecciona un producto válido');
+                    if (cant <= 0) return alert('La cantidad debe ser mayor a cero');
+                    if (prod.cantidad < cant) return alert('Stock insuficiente para realizar la devolución');
+
+                    // Disminuir stock y aumentar dinero en caja
+                    prod.cantidad -= cant;
+
+                    if (metodoVal === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) + montoVal;
+                    else DB.caja.nequi = (DB.caja.nequi || 0) + montoVal;
+
+                    DB.ventas.unshift({
+                        id: Date.now(),
+                        prodId: prod.id,
+                        prodNombre: `(Devolución) ${prod.nombre}`,
+                        cantidad: cant,
+                        costoUnitario: prod.costo || 0,
+                        monto: montoVal,
+                        metodo: metodoVal,
+                        fecha: fechaIso
+                    });
+                }
 
             } else {
                 const esStock = document.getElementById('gasto-es-stock').checked;
@@ -1289,18 +1475,32 @@
             }
 
             guardarDB();
-            alert('Operación registrada exitosamente');
+            if (tipo === 'venta-historica') {
+                alert('Venta de otro mes registrada. No se cambió la caja ni el stock.');
+            } else {
+                alert('Operación registrada exitosamente');
+            }
             limpiarFormularioOperacion();
         }
 
         /* --- EDICIÓN Y ELIMINACIÓN DE VENTAS --- */
         function eliminarVenta(id) {
-            if (!confirm('¿Estás seguro de eliminar esta venta? Esto devolverá el stock al inventario y descontará el dinero de la caja.')) return;
-
             const index = DB.ventas.findIndex(v => v.id === id);
             if (index === -1) return;
 
             const venta = DB.ventas[index];
+
+            // Venta de otro mes: solo se borra del historial, sin tocar caja ni stock
+            if (venta.historica) {
+                if (!confirm('¿Eliminar esta venta de otro mes? No cambiará la caja ni el inventario.')) return;
+                DB.ventas.splice(index, 1);
+                guardarDB();
+                alert('Venta eliminada del historial.');
+                return;
+            }
+
+            if (!confirm('¿Estás seguro de eliminar esta venta? Esto devolverá el stock al inventario y descontará el dinero de la caja.')) return;
+
             const pId = venta.prodId || venta.productoId;
             const cantVenta = venta.cantidad || 1;
             const montoVenta = venta.monto !== undefined ? venta.monto : (venta.montoTotal || 0);
@@ -1334,8 +1534,25 @@
                 selectProd.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
             });
 
+            const esHistorica = !!venta.historica;
+            const esSinInventario = !!venta.sinInventario;
+            const usaNombre = esHistorica || esSinInventario;
+
+            // Mostrar el campo correcto según el tipo de venta
+            const avisoEdit = document.getElementById('edit-venta-aviso-historica');
+            avisoEdit.style.display = usaNombre ? 'block' : 'none';
+            avisoEdit.innerText = esHistorica
+                ? 'Venta de otro mes: editarla NO cambia la caja ni el stock.'
+                : 'Producto escrito a mano: editarlo cambia la caja, pero NO cambia el stock.';
+            document.getElementById('edit-venta-campo-select').style.display = usaNombre ? 'none' : 'block';
+            document.getElementById('edit-venta-campo-nombre').style.display = usaNombre ? 'block' : 'none';
+
             document.getElementById('edit-venta-id').value = venta.id;
-            document.getElementById('edit-venta-producto').value = venta.prodId || venta.productoId;
+            if (usaNombre) {
+                document.getElementById('edit-venta-nombre').value = venta.prodNombre || '';
+            } else {
+                document.getElementById('edit-venta-producto').value = venta.prodId || venta.productoId;
+            }
             document.getElementById('edit-venta-cantidad').value = venta.cantidad || 1;
             document.getElementById('edit-venta-monto').value = venta.monto !== undefined ? venta.monto : (venta.montoTotal || 0);
             document.getElementById('edit-venta-metodo').value = venta.metodo || venta.metodoPago || 'Efectivo';
@@ -1349,6 +1566,11 @@
         }
 
         function autofillEditVentaPrecio() {
+            const idVenta = parseInt(document.getElementById('edit-venta-id').value);
+            const ventaActual = DB.ventas.find(v => v.id === idVenta);
+            // En ventas de otro mes el monto no se rellena solo (puede ser de un producto que ya no existe)
+            if (ventaActual && (ventaActual.historica || ventaActual.sinInventario)) return;
+
             const prodId = parseInt(document.getElementById('edit-venta-producto').value);
             const cant = parseInt(document.getElementById('edit-venta-cantidad').value) || 1;
             const prod = DB.inventario.find(p => p.id === prodId);
@@ -1362,7 +1584,6 @@
             const venta = DB.ventas.find(v => v.id === id);
             if (!venta) return;
 
-            const nuevoProdId = parseInt(document.getElementById('edit-venta-producto').value);
             const nuevaCant = parseInt(document.getElementById('edit-venta-cantidad').value) || 0;
             const nuevoMonto = parseFloat(document.getElementById('edit-venta-monto').value) || 0;
             const nuevoMetodo = document.getElementById('edit-venta-metodo').value;
@@ -1370,6 +1591,52 @@
 
             if (nuevaCant <= 0) return alert('La cantidad debe ser mayor a 0');
             if (nuevoMonto < 0) return alert('El monto no puede ser negativo');
+
+            // Venta de otro mes: se actualiza solo el registro, sin tocar caja ni stock
+            if (venta.historica) {
+                const nuevoNombre = document.getElementById('edit-venta-nombre').value.trim();
+                if (!nuevoNombre) return alert('Escribe el nombre del producto');
+
+                venta.prodNombre = nuevoNombre;
+                venta.cantidad = nuevaCant;
+                venta.monto = nuevoMonto;
+                venta.metodo = nuevoMetodo;
+                venta.fecha = nuevaFechaIso;
+
+                guardarDB();
+                cerrarModalEditarVenta();
+                alert('Venta de otro mes actualizada (sin cambios en caja ni stock)');
+                return;
+            }
+
+            // Devolución con producto escrito a mano: cambia la caja, pero no el stock
+            if (venta.sinInventario) {
+                const nuevoNombre = document.getElementById('edit-venta-nombre').value.trim();
+                if (!nuevoNombre) return alert('Escribe el nombre del producto');
+
+                const montoViejo = venta.monto !== undefined ? venta.monto : (venta.montoTotal || 0);
+                const metodoViejo = venta.metodo || venta.metodoPago || 'Efectivo';
+
+                if (metodoViejo === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) - montoViejo;
+                else DB.caja.nequi = (DB.caja.nequi || 0) - montoViejo;
+
+                if (nuevoMetodo === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) + nuevoMonto;
+                else DB.caja.nequi = (DB.caja.nequi || 0) + nuevoMonto;
+
+                venta.prodNombre = nuevoNombre;
+                venta.cantidad = nuevaCant;
+                venta.monto = nuevoMonto;
+                venta.metodo = nuevoMetodo;
+                venta.fecha = nuevaFechaIso;
+
+                guardarDB();
+                cerrarModalEditarVenta();
+                alert('Devolución actualizada correctamente');
+                return;
+            }
+
+            const nuevoProdId = parseInt(document.getElementById('edit-venta-producto').value);
+            if (!DB.inventario.find(p => p.id === nuevoProdId)) return alert('Producto no encontrado');
 
             const pIdAntiguo = venta.prodId || venta.productoId;
             const cantAntigua = venta.cantidad || 1;
@@ -1618,6 +1885,7 @@
 
             ventasFiltradas.forEach(v => {
                 const prodNombre = v.prodNombre || v.productoNombre || 'Sin Nombre';
+                const etiquetaHistorica = v.historica ? '<span class="tag-historica">Otro mes</span>' : '';
                 const montoVal = v.monto !== undefined ? v.monto : (v.montoTotal || 0);
                 const metodoVal = v.metodo || v.metodoPago || 'Efectivo';
                 const fechaMostrar = v.fecha ? (typeof v.fecha === 'string' && v.fecha.includes('T') ? new Date(v.fecha).toLocaleString('es-CO') : v.fecha) : 'Sin fecha';
@@ -1625,7 +1893,7 @@
                 tbodyVentas.innerHTML += `
                     <tr>
                         <td style="font-size:0.75rem;">${fechaMostrar}</td>
-                        <td>${prodNombre}</td>
+                        <td>${prodNombre}${etiquetaHistorica}</td>
                         <td>${v.cantidad || 1}</td>
                         <td><strong>${formatoMoneda(montoVal)}</strong></td>
                         <td>${metodoVal}</td>
