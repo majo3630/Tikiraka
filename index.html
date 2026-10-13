@@ -466,6 +466,7 @@
                     <option value="venta-historica">Venta de otro mes (sin afectar caja)</option>
                     <option value="devolucion">Devolución</option>
                     <option value="gasto">Gasto / Compra</option>
+                    <option value="gasto-historico">Gasto de otro mes (sin afectar caja)</option>
                 </select>
 
                 <label style="font-size:0.8rem; color:var(--text-secondary);">Fecha y Hora de la Operación:</label>
@@ -537,6 +538,38 @@
                     </div>
 
                     <input type="number" id="gasto-monto" placeholder="Monto total pagado ($)">
+                </div>
+
+                <!-- Formulario Gasto Histórico (otros meses) -->
+                <div id="form-gasto-historico" style="display:none;">
+                    <div class="aviso-historica">
+                        Este gasto solo queda en el historial y las gráficas. NO cambia el dinero en caja y NO cambia el stock del inventario. Elige arriba la fecha del mes en que se pagó.
+                    </div>
+
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="gh-es-producto" onchange="toggleGastoHistProducto()">
+                        <label for="gh-es-producto">¿Es la compra de un producto?</label>
+                    </div>
+
+                    <div id="gh-campo-concepto">
+                        <input type="text" id="gh-concepto" placeholder="Concepto del gasto o compra">
+                    </div>
+
+                    <div id="gh-campos-producto" style="display:none;">
+                        <div class="checkbox-container">
+                            <input type="checkbox" id="gh-es-manual" onchange="toggleGastoHistManual()">
+                            <label for="gh-es-manual">Producto que ya no existe (escribir el nombre)</label>
+                        </div>
+                        <div id="gh-campo-select">
+                            <select id="gh-producto" onchange="autofillCostoGastoHist()"></select>
+                        </div>
+                        <div id="gh-campo-manual" style="display:none;">
+                            <input type="text" id="gh-nombre-manual" placeholder="Nombre del producto (escrito a mano)">
+                        </div>
+                        <input type="number" id="gh-cantidad" placeholder="Cantidad de unidades compradas" value="1" oninput="autofillCostoGastoHist()">
+                    </div>
+
+                    <input type="number" id="gh-monto" placeholder="Monto total pagado ($)">
                 </div>
 
                 <select id="metodo-pago">
@@ -769,7 +802,11 @@
             <h2 style="color:var(--primary); margin-bottom:15px;">Editar Gasto / Compra</h2>
             <input type="hidden" id="edit-gasto-id">
 
-            <div class="checkbox-container">
+            <div id="edit-gasto-aviso-historica" class="aviso-historica" style="display:none;">
+                Gasto de otro mes: editarlo NO cambia la caja ni el stock.
+            </div>
+
+            <div class="checkbox-container" id="edit-gasto-checkbox-wrap">
                 <input type="checkbox" id="edit-gasto-es-stock" onchange="toggleEditGastoStock()">
                 <label for="edit-gasto-es-stock">¿Es una compra de stock / mercadería?</label>
             </div>
@@ -1008,17 +1045,20 @@
             const tbody = document.getElementById('tabla-inventario');
             const selectVenta = document.getElementById('venta-producto');
             const selectHistorica = document.getElementById('hist-producto');
+            const selectGastoHist = document.getElementById('gh-producto');
             const selectDevolucion = document.getElementById('devolucion-producto');
             const selectGasto = document.getElementById('gasto-producto');
 
             const valVenta = selectVenta.value;
             const valHistorica = selectHistorica ? selectHistorica.value : '';
+            const valGastoHist = selectGastoHist ? selectGastoHist.value : '';
             const valDevolucion = selectDevolucion ? selectDevolucion.value : '';
             const valGasto = selectGasto.value;
 
             tbody.innerHTML = '';
             selectVenta.innerHTML = '<option value="">Selecciona Producto</option>';
             if (selectHistorica) selectHistorica.innerHTML = '<option value="">Selecciona Producto</option>';
+            if (selectGastoHist) selectGastoHist.innerHTML = '<option value="">Selecciona Producto</option>';
             if (selectDevolucion) selectDevolucion.innerHTML = '<option value="">Selecciona Producto</option>';
             selectGasto.innerHTML = '<option value="">Selecciona Producto</option>';
 
@@ -1039,12 +1079,14 @@
                 `;
                 selectVenta.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
                 if (selectHistorica) selectHistorica.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
+                if (selectGastoHist) selectGastoHist.innerHTML += `<option value="${p.id}">${p.nombre} (Costo: ${formatoMoneda(p.costo)})</option>`;
                 if (selectDevolucion) selectDevolucion.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
                 selectGasto.innerHTML += `<option value="${p.id}">${p.nombre} (Costo: ${formatoMoneda(p.costo)})</option>`;
             });
 
             if (valVenta) selectVenta.value = valVenta;
             if (valHistorica && selectHistorica) selectHistorica.value = valHistorica;
+            if (valGastoHist && selectGastoHist) selectGastoHist.value = valGastoHist;
             if (valDevolucion && selectDevolucion) selectDevolucion.value = valDevolucion;
             if (valGasto) selectGasto.value = valGasto;
         }
@@ -1202,12 +1244,39 @@
             document.getElementById('form-venta-historica').style.display = tipo === 'venta-historica' ? 'block' : 'none';
             document.getElementById('form-devolucion').style.display = tipo === 'devolucion' ? 'block' : 'none';
             document.getElementById('form-gasto').style.display = tipo === 'gasto' ? 'block' : 'none';
+            document.getElementById('form-gasto-historico').style.display = tipo === 'gasto-historico' ? 'block' : 'none';
         }
 
         function toggleGastoStock() {
             const esStock = document.getElementById('gasto-es-stock').checked;
             document.getElementById('gasto-simple-fields').style.display = esStock ? 'none' : 'block';
             document.getElementById('gasto-stock-fields').style.display = esStock ? 'block' : 'none';
+        }
+
+        // Gasto de otro mes: alterna entre "concepto" y "compra de un producto"
+        function toggleGastoHistProducto() {
+            const esProducto = document.getElementById('gh-es-producto').checked;
+            document.getElementById('gh-campo-concepto').style.display = esProducto ? 'none' : 'block';
+            document.getElementById('gh-campos-producto').style.display = esProducto ? 'block' : 'none';
+            document.getElementById('gh-monto').value = '';
+            if (esProducto) autofillCostoGastoHist();
+        }
+
+        // Gasto de otro mes: elegir producto del inventario o escribir el nombre a mano
+        function toggleGastoHistManual() {
+            const esManual = document.getElementById('gh-es-manual').checked;
+            document.getElementById('gh-campo-select').style.display = esManual ? 'none' : 'block';
+            document.getElementById('gh-campo-manual').style.display = esManual ? 'block' : 'none';
+            document.getElementById('gh-monto').value = '';
+            if (!esManual) autofillCostoGastoHist();
+        }
+
+        function autofillCostoGastoHist() {
+            if (document.getElementById('gh-es-manual').checked) return;
+            const prodId = parseInt(document.getElementById('gh-producto').value);
+            const cant = parseInt(document.getElementById('gh-cantidad').value) || 1;
+            const prod = DB.inventario.find(p => p.id === prodId);
+            document.getElementById('gh-monto').value = prod ? prod.costo * cant : '';
         }
 
         // Alterna entre elegir un producto del inventario o escribir el nombre a mano
@@ -1290,6 +1359,17 @@
             document.getElementById('hist-nombre-manual').value = '';
             document.getElementById('hist-cantidad').value = '1';
             document.getElementById('hist-monto').value = '';
+
+            // Gasto histórico
+            document.getElementById('gh-es-producto').checked = false;
+            document.getElementById('gh-es-manual').checked = false;
+            toggleGastoHistProducto();
+            toggleGastoHistManual();
+            document.getElementById('gh-concepto').value = '';
+            document.getElementById('gh-producto').value = '';
+            document.getElementById('gh-nombre-manual').value = '';
+            document.getElementById('gh-cantidad').value = '1';
+            document.getElementById('gh-monto').value = '';
 
             // Devolución
             document.getElementById('devolucion-es-manual').checked = false;
@@ -1379,6 +1459,51 @@
                     monto: montoVal,
                     metodo: metodoVal,
                     fecha: fechaIso,
+                    historica: true
+                });
+
+            } else if (tipo === 'gasto-historico') {
+                // GASTO DE OTRO MES: solo queda en el historial.
+                // NO toca la caja y NO toca el stock del inventario.
+                const esProducto = document.getElementById('gh-es-producto').checked;
+                const montoVal = parseFloat(document.getElementById('gh-monto').value);
+                const fechaCampo = document.getElementById('operacion-fecha').value;
+                let concepto = '';
+
+                if (!fechaCampo) return alert('Elige la fecha en que se hizo el gasto');
+
+                if (esProducto) {
+                    const cant = parseInt(document.getElementById('gh-cantidad').value) || 0;
+                    const esManual = document.getElementById('gh-es-manual').checked;
+                    let nombreProd = '';
+
+                    if (esManual) {
+                        nombreProd = document.getElementById('gh-nombre-manual').value.trim();
+                        if (!nombreProd) return alert('Escribe el nombre del producto');
+                    } else {
+                        const prodId = parseInt(document.getElementById('gh-producto').value);
+                        const prod = DB.inventario.find(p => p.id === prodId);
+                        if (!prod) return alert('Selecciona un producto o marca la opción de escribirlo a mano');
+                        nombreProd = prod.nombre;
+                    }
+                    if (cant <= 0) return alert('La cantidad debe ser mayor a cero');
+                    concepto = `Compra: ${nombreProd} (x${cant})`;
+                } else {
+                    concepto = document.getElementById('gh-concepto').value.trim();
+                    if (!concepto) return alert('Ingresa un concepto del gasto');
+                }
+
+                if (isNaN(montoVal) || montoVal <= 0) return alert('Ingresa un monto válido');
+
+                DB.gastos.unshift({
+                    id: Date.now(),
+                    concepto: concepto,
+                    monto: montoVal,
+                    metodo: metodoVal,
+                    fecha: fechaIso,
+                    esStock: false,
+                    prodId: null,
+                    cantidadStock: null,
                     historica: true
                 });
 
@@ -1477,6 +1602,8 @@
             guardarDB();
             if (tipo === 'venta-historica') {
                 alert('Venta de otro mes registrada. No se cambió la caja ni el stock.');
+            } else if (tipo === 'gasto-historico') {
+                alert('Gasto de otro mes registrado. No se cambió la caja ni el stock.');
             } else {
                 alert('Operación registrada exitosamente');
             }
@@ -1678,12 +1805,22 @@
 
         /* --- EDICIÓN Y ELIMINACIÓN DE GASTOS / COMPRAS --- */
         function eliminarGasto(id) {
-            if (!confirm('¿Estás seguro de eliminar este gasto/compra? Esto reajustará la caja y el inventario si aplica.')) return;
-
             const index = DB.gastos.findIndex(g => g.id === id);
             if (index === -1) return;
 
             const gasto = DB.gastos[index];
+
+            // Gasto de otro mes: solo se borra del historial, sin tocar caja ni stock
+            if (gasto.historica) {
+                if (!confirm('¿Eliminar este gasto de otro mes? No cambiará la caja ni el inventario.')) return;
+                DB.gastos.splice(index, 1);
+                guardarDB();
+                alert('Gasto eliminado del historial.');
+                return;
+            }
+
+            if (!confirm('¿Estás seguro de eliminar este gasto/compra? Esto reajustará la caja y el inventario si aplica.')) return;
+
             const montoGasto = gasto.monto !== undefined ? gasto.monto : (gasto.montoTotal || 0);
             const metodoGasto = gasto.metodo || gasto.metodoPago || 'Efectivo';
 
@@ -1743,6 +1880,17 @@
             document.getElementById('edit-gasto-fecha').value = isoAFechaLocalInput(gasto.fecha || gasto.isoFecha);
 
             toggleEditGastoStock();
+
+            // Gasto de otro mes: solo concepto, monto, método y fecha (sin stock)
+            const esHistoricoGasto = !!gasto.historica;
+            document.getElementById('edit-gasto-aviso-historica').style.display = esHistoricoGasto ? 'block' : 'none';
+            document.getElementById('edit-gasto-checkbox-wrap').style.display = esHistoricoGasto ? 'none' : 'flex';
+            if (esHistoricoGasto) {
+                document.getElementById('edit-gasto-es-stock').checked = false;
+                document.getElementById('edit-gasto-simple-fields').style.display = 'block';
+                document.getElementById('edit-gasto-stock-fields').style.display = 'none';
+            }
+
             document.getElementById('modal-editar-gasto').style.display = 'flex';
         }
 
@@ -1761,6 +1909,22 @@
             const nuevaFechaIso = obtenerFechaOperacionISO('edit-gasto-fecha');
 
             if (nuevoMonto <= 0) return alert('Ingresa un monto válido');
+
+            // Gasto de otro mes: se actualiza solo el registro, sin tocar caja ni stock
+            if (gasto.historica) {
+                const conceptoHist = document.getElementById('edit-gasto-concepto').value.trim();
+                if (!conceptoHist) return alert('Ingresa un concepto del gasto');
+
+                gasto.concepto = conceptoHist;
+                gasto.monto = nuevoMonto;
+                gasto.metodo = nuevoMetodo;
+                gasto.fecha = nuevaFechaIso;
+
+                guardarDB();
+                cerrarModalEditarGasto();
+                alert('Gasto de otro mes actualizado (sin cambios en caja ni stock)');
+                return;
+            }
 
             // Revertir efecto anterior en caja
             const montoAntiguo = gasto.monto !== undefined ? gasto.monto : (gasto.montoTotal || 0);
@@ -1915,7 +2079,7 @@
                 tbodyGastos.innerHTML += `
                     <tr>
                         <td style="font-size:0.75rem;">${fechaMostrar}</td>
-                        <td>${g.concepto || 'Gasto'}</td>
+                        <td>${g.concepto || 'Gasto'}${g.historica ? '<span class="tag-historica">Otro mes</span>' : ''}</td>
                         <td><strong style="color:var(--danger);">${formatoMoneda(montoVal)}</strong></td>
                         <td>${metodoVal}</td>
                         <td>
