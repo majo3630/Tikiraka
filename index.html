@@ -884,6 +884,13 @@
 
         let charts = {};
 
+        // Devuelve la fecha de un registro como número (para poder ordenar).
+        // Si no tiene fecha válida devuelve 0 y queda al final.
+        function timestampItem(item) {
+            const d = new Date(item.fecha || item.isoFecha);
+            return isNaN(d.getTime()) ? 0 : d.getTime();
+        }
+
         function formatoMoneda(valor) {
             return '$ ' + Number(valor || 0).toLocaleString('es-CO');
         }
@@ -1218,7 +1225,7 @@
                 return;
             }
 
-            DB.historialBase.forEach(h => {
+            [...DB.historialBase].sort((a, b) => timestampItem(b) - timestampItem(a)).forEach(h => {
                 let colorAccion = '#fff';
                 if (h.accion.includes('+')) colorAccion = 'var(--success)';
                 if (h.accion.includes('-')) colorAccion = 'var(--danger)';
@@ -1493,7 +1500,7 @@
                     if (!concepto) return alert('Ingresa un concepto del gasto');
                 }
 
-                if (isNaN(montoVal) || montoVal <= 0) return alert('Ingresa un monto válido');
+                if (isNaN(montoVal) || montoVal < 0) return alert('Ingresa un monto válido (puede ser 0)');
 
                 DB.gastos.unshift({
                     id: Date.now(),
@@ -1565,7 +1572,7 @@
                 let prodIdGuardar = null;
                 let cantGuardar = null;
 
-                if (montoVal <= 0) return alert('Ingresa un monto válido');
+                if (montoVal < 0) return alert('El monto no puede ser negativo');
 
                 if (esStock) {
                     const prodId = parseInt(document.getElementById('gasto-producto').value);
@@ -1908,7 +1915,7 @@
             const nuevoMetodo = document.getElementById('edit-gasto-metodo').value;
             const nuevaFechaIso = obtenerFechaOperacionISO('edit-gasto-fecha');
 
-            if (nuevoMonto <= 0) return alert('Ingresa un monto válido');
+            if (nuevoMonto < 0) return alert('El monto no puede ser negativo');
 
             // Gasto de otro mes: se actualiza solo el registro, sin tocar caja ni stock
             if (gasto.historica) {
@@ -2047,7 +2054,8 @@
                 return filtro === 'TODOS' || obtenerAnioMesLocal(f) === filtro;
             });
 
-            ventasFiltradas.forEach(v => {
+            // Más reciente primero
+            [...ventasFiltradas].sort((a, b) => timestampItem(b) - timestampItem(a)).forEach(v => {
                 const prodNombre = v.prodNombre || v.productoNombre || 'Sin Nombre';
                 const etiquetaHistorica = v.historica ? '<span class="tag-historica">Otro mes</span>' : '';
                 const montoVal = v.monto !== undefined ? v.monto : (v.montoTotal || 0);
@@ -2071,7 +2079,7 @@
                 `;
             });
 
-            gastosFiltrados.forEach(g => {
+            [...gastosFiltrados].sort((a, b) => timestampItem(b) - timestampItem(a)).forEach(g => {
                 const montoVal = g.monto !== undefined ? g.monto : (g.montoTotal || 0);
                 const metodoVal = g.metodo || g.metodoPago || 'Efectivo';
                 const fechaMostrar = g.fecha ? (typeof g.fecha === 'string' && g.fecha.includes('T') ? new Date(g.fecha).toLocaleString('es-CO') : g.fecha) : 'Sin fecha';
@@ -2131,7 +2139,7 @@
 
             const contexDia = document.getElementById('chartVentasDia').getContext('2d');
             const ventasDia = {};
-            ventasFiltradas.forEach(v => {
+            [...ventasFiltradas].sort((a, b) => timestampItem(a) - timestampItem(b)).forEach(v => {
                 let dia = 'Fecha';
                 if(v.fecha && typeof v.fecha === 'string') {
                     dia = v.fecha.includes('T') ? new Date(v.fecha).toLocaleDateString('es-CO') : v.fecha.split(',')[0];
