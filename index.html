@@ -474,7 +474,19 @@
 
                 <!-- Formulario Venta -->
                 <div id="form-venta">
-                    <select id="venta-producto" onchange="autofillPrecioVenta()"></select>
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="venta-es-manual" onchange="toggleVentaManual()">
+                        <label for="venta-es-manual">Producto no registrado (escribir el nombre)</label>
+                    </div>
+
+                    <div id="venta-campo-select">
+                        <select id="venta-producto" onchange="autofillPrecioVenta()"></select>
+                    </div>
+
+                    <div id="venta-campo-manual" style="display:none;">
+                        <input type="text" id="venta-nombre-manual" placeholder="Nombre del producto (escrito a mano)">
+                    </div>
+
                     <input type="number" id="venta-cantidad" placeholder="Cantidad vendida" value="1" oninput="autofillPrecioVenta()">
                     <label style="font-size:0.8rem; color:var(--text-secondary);">Precio Final de Venta ($) - Modificable / Descuento:</label>
                     <input type="number" id="venta-monto" placeholder="Monto total ($)">
@@ -1295,7 +1307,18 @@
             if (!esManual) autofillPrecioHistorica();
         }
 
+        // Venta normal: alterna entre elegir un producto del inventario o escribir
+        // el nombre de un producto NO registrado (no toca el stock, pero sí la caja)
+        function toggleVentaManual() {
+            const esManual = document.getElementById('venta-es-manual').checked;
+            document.getElementById('venta-campo-select').style.display = esManual ? 'none' : 'block';
+            document.getElementById('venta-campo-manual').style.display = esManual ? 'block' : 'none';
+            document.getElementById('venta-monto').value = '';
+            if (!esManual) autofillPrecioVenta();
+        }
+
         function autofillPrecioVenta() {
+            if (document.getElementById('venta-es-manual').checked) return;
             const prodId = parseInt(document.getElementById('venta-producto').value);
             const cant = parseInt(document.getElementById('venta-cantidad').value) || 1;
             const prod = DB.inventario.find(p => p.id === prodId);
@@ -1355,7 +1378,10 @@
         // LIMPIEZA TOTAL TRAS OPERACIÓN
         function limpiarFormularioOperacion() {
             // Venta
+            document.getElementById('venta-es-manual').checked = false;
+            toggleVentaManual();
             document.getElementById('venta-producto').value = '';
+            document.getElementById('venta-nombre-manual').value = '';
             document.getElementById('venta-cantidad').value = '1';
             document.getElementById('venta-monto').value = '';
 
@@ -1404,30 +1430,54 @@
             const fechaIso = obtenerFechaOperacionISO('operacion-fecha');
 
             if (tipo === 'venta') {
-                const prodId = parseInt(document.getElementById('venta-producto').value);
+                const esManual = document.getElementById('venta-es-manual').checked;
                 const cant = parseInt(document.getElementById('venta-cantidad').value) || 0;
                 const montoVal = parseFloat(document.getElementById('venta-monto').value) || 0;
-                const prod = DB.inventario.find(p => p.id === prodId);
 
-                if (!prod) return alert('Selecciona un producto válido');
-                if (cant <= 0) return alert('La cantidad debe ser mayor a cero');
-                if (prod.cantidad < cant) return alert('Stock insuficiente');
+                if (esManual) {
+                    // Producto NO registrado: no hay stock que cambiar, la caja sí se ajusta
+                    const nombreManual = document.getElementById('venta-nombre-manual').value.trim();
+                    if (!nombreManual) return alert('Escribe el nombre del producto');
+                    if (cant <= 0) return alert('La cantidad debe ser mayor a cero');
 
-                prod.cantidad -= cant;
-                
-                if (metodoVal === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) + montoVal;
-                else DB.caja.nequi = (DB.caja.nequi || 0) + montoVal;
+                    if (metodoVal === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) + montoVal;
+                    else DB.caja.nequi = (DB.caja.nequi || 0) + montoVal;
 
-                DB.ventas.unshift({
-                    id: Date.now(),
-                    prodId: prod.id,
-                    prodNombre: prod.nombre,
-                    cantidad: cant,
-                    costoUnitario: prod.costo || 0,
-                    monto: montoVal,
-                    metodo: metodoVal,
-                    fecha: fechaIso
-                });
+                    DB.ventas.unshift({
+                        id: Date.now(),
+                        prodId: null,
+                        prodNombre: nombreManual,
+                        cantidad: cant,
+                        costoUnitario: 0,
+                        monto: montoVal,
+                        metodo: metodoVal,
+                        fecha: fechaIso,
+                        sinInventario: true
+                    });
+                } else {
+                    const prodId = parseInt(document.getElementById('venta-producto').value);
+                    const prod = DB.inventario.find(p => p.id === prodId);
+
+                    if (!prod) return alert('Selecciona un producto válido');
+                    if (cant <= 0) return alert('La cantidad debe ser mayor a cero');
+                    if (prod.cantidad < cant) return alert('Stock insuficiente');
+
+                    prod.cantidad -= cant;
+                    
+                    if (metodoVal === 'Efectivo') DB.caja.efectivo = (DB.caja.efectivo || 0) + montoVal;
+                    else DB.caja.nequi = (DB.caja.nequi || 0) + montoVal;
+
+                    DB.ventas.unshift({
+                        id: Date.now(),
+                        prodId: prod.id,
+                        prodNombre: prod.nombre,
+                        cantidad: cant,
+                        costoUnitario: prod.costo || 0,
+                        monto: montoVal,
+                        metodo: metodoVal,
+                        fecha: fechaIso
+                    });
+                }
 
             } else if (tipo === 'venta-historica') {
                 // VENTA DE OTRO MES: solo queda en el historial.
