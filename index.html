@@ -1099,44 +1099,135 @@
             if (input) input.value = isoAFechaLocalInput(new Date().toISOString());
         }
 
-        // Conectar eventos en tiempo real para múltiples dispositivos
-        firebase.auth().onAuthStateChanged((user) => {
-            if (user) {
-                // Escuchador en tiempo real ultrasincronizado
-                db.ref('tikiraka_app').on('value', (snapshot) => {
-                    const data = snapshot.val();
-                    if (data) {
-                        DB.inventario = data.inventario ? Object.values(data.inventario) : [];
-                        DB.caja = data.caja || { efectivo: 0, nequi: 0 };
-                        DB.historialBase = data.historialBase ? Object.values(data.historialBase) : [];
-                        DB.ventas = data.ventas ? Object.values(data.ventas) : [];
-                        DB.gastos = data.gastos ? Object.values(data.gastos) : [];
-                        DB.ventasDia = data.ventasDia ? Object.values(data.ventasDia) : [];
-                        DB.config = data.config || {};
-                        
-                        if (data.socios) {
-                            DB.socios = Object.values(data.socios).map(s => ({
-                                ...s,
-                                notas: s.notas || '',
-                                asistencia: s.asistencia ? (Array.isArray(s.asistencia) ? s.asistencia : Object.values(s.asistencia)) : [],
-                                gastos: s.gastos ? (Array.isArray(s.gastos) ? s.gastos : Object.values(s.gastos)) : []
-                            }));
-                        } else {
-                            DB.socios = [];
-                        }
-                    } else {
-                        DB = { inventario: [], caja: { efectivo: 0, nequi: 0 }, historialBase: [], ventas: [], gastos: [], socios: [], ventasDia: [], config: {} };
-                    }
-                    dbCargada = true;
-                    actualizarUI();
+        /* --- SINCRONIZACIÓN RÁPIDA ---
+           Cada sección (ventas, gastos, inventario...) se carga y se guarda por separado,
+           así que un cambio pequeño ya no sube ni baja toda la base de datos.
+           Las fotos de los productos viven aparte (tikiraka_app/fotos) y van comprimidas. */
+        const SECCIONES = ['inventario', 'caja', 'historialBase', 'ventas', 'gastos', 'socios', 'ventasDia', 'config'];
+        const seccionesCargadas = new Set();
+        const crudoAnterior = {};
+        let ultimoGuardado = {};
+        let FOTOS = {};
+        let fotosListas = false;
+        let migrandoFotos = false;
+
+        function aplicarSeccion(k, v) {
+            const lista = (x) => (x ? Object.values(x) : []);
+            if (k === 'caja') DB.caja = v || { efectivo: 0, nequi: 0 };
+            else if (k === 'config') DB.config = v || {};
+            else if (k === 'socios') {
+                DB.socios = v ? Object.values(v).map(s => ({
+                    ...s,
+                    notas: s.notas || '',
+                    asistencia: s.asistencia ? (Array.isArray(s.asistencia) ? s.asistencia : Object.values(s.asistencia)) : [],
+                    gastos: s.gastos ? (Array.isArray(s.gastos) ? s.gastos : Object.values(s.gastos)) : []
+                })) : [];
+            } else DB[k] = lista(v);
+        }
+
+        // Texto de lo que se guardaría de una sección. En el inventario NO se manda la foto
+        // si ya está guardada aparte.
+        function seccionParaGuardar(k) {
+            let v = DB[k];
+            if (k === 'inventario') {
+                v = (v || []).map(p => {
+                    if (FOTOS[p.id]) { const { foto, ...resto } = p; return resto; }
+                    return p;
                 });
             }
+            return JSON.stringify(v === undefined ? null : v);
+        }
+
+        firebase.auth().onAuthStateChanged((user) => {
+            if (!user) return;
+            SECCIONES.forEach(k => {
+                db.ref('tikiraka_app/' + k).on('value', (snapshot) => {
+                    const valor = snapshot.val();
+                    const crudo = JSON.stringify(valor);
+                    if (seccionesCargadas.has(k) && crudo === crudoAnterior[k]) return; // llegó igual, no hay nada nuevo
+                    crudoAnterior[k] = crudo;
+                    aplicarSeccion(k, valor);
+                    ultimoGuardado[k] = seccionParaGuardar(k);
+                    seccionesCargadas.add(k);
+                    if (!dbCargada && seccionesCargadas.size === SECCIONES.length) dbCargada = true;
+                    actualizarUI();
+                    if (k === 'inventario') migrarFotos();
+                });
+            });
+            db.ref('tikiraka_app/fotos').on('value', (snapshot) => {
+                FOTOS = snapshot.val() || {};
+                fotosListas = true;
+                if (dbCargada) renderInventario();
+                migrarFotos();
+            });
         });
 
-        // Guardado optimizado e inmediato
+        // Guarda SOLO las secciones que cambiaron
         function guardarDB() {
-            db.ref('tikiraka_app').set(DB);
+            if (!dbCargada) {
+                alert('Espera un momento: todavía se están cargando los datos.');
+                return;
+            }
+            const cambios = {};
+            let hay = false;
+            SECCIONES.forEach(k => {
+                const txt = seccionParaGuardar(k);
+                if (txt !== ultimoGuardado[k]) {
+                    cambios[k] = JSON.parse(txt);
+                    ultimoGuardado[k] = txt;
+                    hay = true;
+                }
+            });
+            if (hay) {
+                db.ref('tikiraka_app').update(cambios).catch(e => {
+                    ultimoGuardado = {};
+                    alert('No se pudo guardar. Revisa tu internet e inténtalo de nuevo. (' + e.message + ')');
+                });
+            }
             programarEnvioSheets();
+        }
+
+        // Reduce una foto (archivo o dataURL) para que pese muy poco
+        function comprimirImagen(origen, max = 500, calidad = 0.7) {
+            return new Promise((resolve, reject) => {
+                const esArchivo = typeof origen !== 'string';
+                const url = esArchivo ? URL.createObjectURL(origen) : origen;
+                const img = new Image();
+                img.onload = () => {
+                    const k = Math.min(1, max / Math.max(img.width, img.height));
+                    const c = document.createElement('canvas');
+                    c.width = Math.max(1, Math.round(img.width * k));
+                    c.height = Math.max(1, Math.round(img.height * k));
+                    const ctx = c.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, c.width, c.height);
+                    ctx.drawImage(img, 0, 0, c.width, c.height);
+                    if (esArchivo) URL.revokeObjectURL(url);
+                    resolve(c.toDataURL('image/jpeg', calidad));
+                };
+                img.onerror = () => { if (esArchivo) URL.revokeObjectURL(url); reject(new Error('No se pudo leer la foto')); };
+                img.src = url;
+            });
+        }
+
+        // Pasa las fotos viejas (que estaban dentro del inventario) a su propio lugar, ya comprimidas.
+        // Solo quita la foto del inventario después de que la copia quedó guardada.
+        async function migrarFotos() {
+            if (migrandoFotos || !fotosListas || !dbCargada) return;
+            const pend = DB.inventario.filter(p => typeof p.foto === 'string' && p.foto.startsWith('data:') && !FOTOS[p.id]);
+            if (!pend.length) return;
+            migrandoFotos = true;
+            try {
+                for (const p of pend) {
+                    const chica = await comprimirImagen(p.foto, 500, 0.7);
+                    await db.ref('tikiraka_app/fotos/' + p.id).set(chica);
+                    FOTOS[p.id] = chica;
+                }
+                guardarDB();
+            } catch (e) {
+                console.error('No se pudieron mover las fotos:', e);
+            }
+            migrandoFotos = false;
         }
 
         /* --- GOOGLE SHEETS --- */
@@ -1350,7 +1441,14 @@
             }
         }
 
+        let uiPendiente = false;
         function actualizarUI() {
+            if (uiPendiente) return;
+            uiPendiente = true;
+            requestAnimationFrame(() => { uiPendiente = false; actualizarUIAhora(); });
+        }
+
+        function actualizarUIAhora() {
             renderInventario();
             renderCaja();
             renderHistorialBase();
@@ -1606,16 +1704,22 @@
 
             if (!nombre) return alert('Ingresa un nombre de producto');
 
-            const guardar = (fotoBase64) => {
-                DB.inventario.push({ id: Date.now(), nombre, cantidad, costo, precio, foto: fotoBase64 });
+            const idNuevo = Date.now();
+            const guardar = (foto) => {
+                DB.inventario.push({ id: idNuevo, nombre, cantidad, costo, precio });
+                if (foto) {
+                    FOTOS[idNuevo] = foto;
+                    db.ref('tikiraka_app/fotos/' + idNuevo).set(foto);
+                }
                 guardarDB();
                 limpiarFormularioProd();
             };
 
             if (fotoInput.files[0]) {
-                const reader = new FileReader();
-                reader.onload = (e) => guardar(e.target.result);
-                reader.readAsDataURL(fotoInput.files[0]);
+                comprimirImagen(fotoInput.files[0]).then(guardar).catch(() => {
+                    alert('No se pudo leer la foto. El producto se guardará sin foto.');
+                    guardar('');
+                });
             } else {
                 guardar('');
             }
@@ -1643,18 +1747,15 @@
             const valDevolucion = selectDevolucion ? selectDevolucion.value : '';
             const valGasto = selectGasto.value;
 
-            tbody.innerHTML = '';
-            selectVenta.innerHTML = '<option value="">Selecciona Producto</option>';
-            if (selectHistorica) selectHistorica.innerHTML = '<option value="">Selecciona Producto</option>';
-            if (selectGastoHist) selectGastoHist.innerHTML = '<option value="">Selecciona Producto</option>';
-            if (selectDevolucion) selectDevolucion.innerHTML = '<option value="">Selecciona Producto</option>';
-            selectGasto.innerHTML = '<option value="">Selecciona Producto</option>';
-
+            const cab = '<option value="">Selecciona Producto</option>';
+            let filas = '', oVenta = cab, oHist = cab, oGH = cab, oDev = cab, oGasto = cab;
             DB.inventario.forEach(p => {
-                tbody.innerHTML += `
+                const nombre = escHtml(p.nombre);
+                const foto = FOTOS[p.id] || p.foto || 'https://via.placeholder.com/40';
+                filas += `
                     <tr>
-                        <td><img src="${p.foto || 'https://via.placeholder.com/40'}" class="img-thumb"></td>
-                        <td>${p.nombre}</td>
+                        <td><img src="${foto}" class="img-thumb" loading="lazy" decoding="async"></td>
+                        <td>${nombre}</td>
                         <td><strong>${p.cantidad}</strong></td>
                         <td>${formatoMoneda(p.precio)}</td>
                         <td>
@@ -1663,14 +1764,19 @@
                                 <button class="btn btn-danger" onclick="eliminarProducto(${p.id})">X</button>
                             </div>
                         </td>
-                    </tr>
-                `;
-                selectVenta.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
-                if (selectHistorica) selectHistorica.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
-                if (selectGastoHist) selectGastoHist.innerHTML += `<option value="${p.id}">${p.nombre} (Costo: ${formatoMoneda(p.costo)})</option>`;
-                if (selectDevolucion) selectDevolucion.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
-                selectGasto.innerHTML += `<option value="${p.id}">${p.nombre} (Costo: ${formatoMoneda(p.costo)})</option>`;
+                    </tr>`;
+                oVenta += `<option value="${p.id}">${nombre} (${formatoMoneda(p.precio)})</option>`;
+                oHist += `<option value="${p.id}">${nombre} (${formatoMoneda(p.precio)})</option>`;
+                oGH += `<option value="${p.id}">${nombre} (Costo: ${formatoMoneda(p.costo)})</option>`;
+                oDev += `<option value="${p.id}">${nombre} (${formatoMoneda(p.precio)})</option>`;
+                oGasto += `<option value="${p.id}">${nombre} (Costo: ${formatoMoneda(p.costo)})</option>`;
             });
+            tbody.innerHTML = filas;
+            selectVenta.innerHTML = oVenta;
+            if (selectHistorica) selectHistorica.innerHTML = oHist;
+            if (selectGastoHist) selectGastoHist.innerHTML = oGH;
+            if (selectDevolucion) selectDevolucion.innerHTML = oDev;
+            selectGasto.innerHTML = oGasto;
 
             if (valVenta) selectVenta.value = valVenta;
             if (valHistorica && selectHistorica) selectHistorica.value = valHistorica;
@@ -1682,6 +1788,8 @@
         function eliminarProducto(id) {
             if(confirm('¿Estás seguro de eliminar este producto?')) {
                 DB.inventario = DB.inventario.filter(p => p.id !== id);
+                delete FOTOS[id];
+                db.ref('tikiraka_app/fotos/' + id).remove();
                 guardarDB();
             }
         }
@@ -1724,13 +1832,13 @@
             prod.precio = precio;
 
             if (fotoInput.files[0]) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    prod.foto = e.target.result;
+                comprimirImagen(fotoInput.files[0]).then(foto => {
+                    FOTOS[prod.id] = foto;
+                    db.ref('tikiraka_app/fotos/' + prod.id).set(foto);
+                    delete prod.foto;
                     guardarDB();
                     cerrarModalEditar();
-                };
-                reader.readAsDataURL(fotoInput.files[0]);
+                }).catch(() => alert('No se pudo leer la foto. Prueba con otra.'));
             } else {
                 guardarDB();
                 cerrarModalEditar();
@@ -2238,7 +2346,7 @@
 
         /* --- EDICIÓN Y ELIMINACIÓN DE VENTAS --- */
         function eliminarVenta(id) {
-            const index = DB.ventas.findIndex(v => v.id === id);
+            const index = DB.ventas.findIndex(v => String(v.id) === String(id));
             if (index === -1) return;
 
             const venta = DB.ventas[index];
@@ -2277,34 +2385,36 @@
         }
 
         function abrirModalEditarVenta(id) {
-            const venta = DB.ventas.find(v => v.id === id);
+            const venta = DB.ventas.find(v => String(v.id) === String(id));
             if (!venta) return;
 
-            const selectProd = document.getElementById('edit-venta-producto');
-            selectProd.innerHTML = '';
-            
-            DB.inventario.forEach(p => {
-                selectProd.innerHTML += `<option value="${p.id}">${p.nombre} (${formatoMoneda(p.precio)})</option>`;
-            });
+            const pIdVenta = venta.prodId || venta.productoId;
+            const productoFalta = !DB.inventario.some(p => String(p.id) === String(pIdVenta));
+
+            document.getElementById('edit-venta-producto').innerHTML = DB.inventario
+                .map(p => `<option value="${p.id}">${escHtml(p.nombre)} (${formatoMoneda(p.precio)})</option>`).join('');
 
             const esHistorica = !!venta.historica;
             const esSinInventario = !!venta.sinInventario;
-            const usaNombre = esHistorica || esSinInventario;
+            // Si el producto ya no está en el inventario de este aparato, se edita por nombre
+            // (así nunca se cambia de producto sin querer).
+            const usaNombre = esHistorica || esSinInventario || productoFalta;
 
-            // Mostrar el campo correcto según el tipo de venta
             const avisoEdit = document.getElementById('edit-venta-aviso-historica');
             avisoEdit.style.display = usaNombre ? 'block' : 'none';
             avisoEdit.innerText = esHistorica
                 ? 'Venta de otro mes: editarla NO cambia la caja ni el stock.'
-                : 'Producto escrito a mano: editarlo cambia la caja, pero NO cambia el stock.';
+                : (productoFalta && !esSinInventario
+                    ? 'Este producto ya no está en el inventario: editarlo cambia la caja, pero NO cambia el stock.'
+                    : 'Producto escrito a mano: editarlo cambia la caja, pero NO cambia el stock.');
             document.getElementById('edit-venta-campo-select').style.display = usaNombre ? 'none' : 'block';
             document.getElementById('edit-venta-campo-nombre').style.display = usaNombre ? 'block' : 'none';
 
             document.getElementById('edit-venta-id').value = venta.id;
             if (usaNombre) {
-                document.getElementById('edit-venta-nombre').value = venta.prodNombre || '';
+                document.getElementById('edit-venta-nombre').value = venta.prodNombre || venta.productoNombre || '';
             } else {
-                document.getElementById('edit-venta-producto').value = venta.prodId || venta.productoId;
+                document.getElementById('edit-venta-producto').value = pIdVenta;
             }
             document.getElementById('edit-venta-cantidad').value = venta.cantidad || 1;
             document.getElementById('edit-venta-monto').value = venta.monto !== undefined ? venta.monto : (venta.montoTotal || 0);
@@ -2320,9 +2430,9 @@
 
         function autofillEditVentaPrecio() {
             const idVenta = parseInt(document.getElementById('edit-venta-id').value);
-            const ventaActual = DB.ventas.find(v => v.id === idVenta);
+            const ventaActual = DB.ventas.find(v => String(v.id) === String(idVenta));
             // En ventas de otro mes el monto no se rellena solo (puede ser de un producto que ya no existe)
-            if (ventaActual && (ventaActual.historica || ventaActual.sinInventario)) return;
+            if (ventaActual && (ventaActual.historica || ventaActual.sinInventario || !DB.inventario.some(p => String(p.id) === String(ventaActual.prodId || ventaActual.productoId)))) return;
 
             const prodId = parseInt(document.getElementById('edit-venta-producto').value);
             const cant = parseInt(document.getElementById('edit-venta-cantidad').value) || 1;
@@ -2334,7 +2444,7 @@
 
         function guardarEdicionVenta() {
             const id = parseInt(document.getElementById('edit-venta-id').value);
-            const venta = DB.ventas.find(v => v.id === id);
+            const venta = DB.ventas.find(v => String(v.id) === String(id));
             if (!venta) return;
 
             const nuevaCant = parseInt(document.getElementById('edit-venta-cantidad').value) || 0;
@@ -2363,7 +2473,7 @@
             }
 
             // Devolución con producto escrito a mano: cambia la caja, pero no el stock
-            if (venta.sinInventario) {
+            if (venta.sinInventario || !DB.inventario.some(p => String(p.id) === String(venta.prodId || venta.productoId))) {
                 const nuevoNombre = document.getElementById('edit-venta-nombre').value.trim();
                 if (!nuevoNombre) return alert('Escribe el nombre del producto');
 
@@ -2485,14 +2595,17 @@
         }
 
         function abrirModalEditarGasto(id) {
-            const gasto = DB.gastos.find(g => g.id === id);
+            const gasto = DB.gastos.find(g => String(g.id) === String(id));
             if (!gasto) return;
 
             const selectProd = document.getElementById('edit-gasto-producto');
             selectProd.innerHTML = '';
-            DB.inventario.forEach(p => {
-                selectProd.innerHTML += `<option value="${p.id}">${p.nombre} (Costo: ${formatoMoneda(p.costo)})</option>`;
-            });
+            selectProd.innerHTML = DB.inventario
+                .map(p => `<option value="${p.id}">${escHtml(p.nombre)} (Costo: ${formatoMoneda(p.costo)})</option>`).join('');
+            // Si el producto de esta compra ya no existe, se muestra tal cual (no se cambia por otro)
+            if (gasto.esStock && gasto.prodId && !DB.inventario.some(p => String(p.id) === String(gasto.prodId))) {
+                selectProd.innerHTML = `<option value="${gasto.prodId}">⚠️ Producto que ya no está en el inventario</option>` + selectProd.innerHTML;
+            }
 
             document.getElementById('edit-gasto-id').value = gasto.id;
             document.getElementById('edit-gasto-es-stock').checked = !!gasto.esStock;
@@ -2526,7 +2639,7 @@
 
         function guardarEdicionGasto() {
             const id = parseInt(document.getElementById('edit-gasto-id').value);
-            const gasto = DB.gastos.find(g => g.id === id);
+            const gasto = DB.gastos.find(g => String(g.id) === String(id));
             if (!gasto) return;
 
             const nuevoEsStock = document.getElementById('edit-gasto-es-stock').checked;
@@ -2552,6 +2665,17 @@
                 return;
             }
 
+            // Revisar todo ANTES de tocar la caja o el stock (así un error no deja saldos a medias)
+            if (nuevoEsStock) {
+                const pv = parseInt(document.getElementById('edit-gasto-producto').value);
+                const cv = parseInt(document.getElementById('edit-gasto-cantidad-stock').value) || 0;
+                const existe = DB.inventario.some(p => p.id === pv);
+                if (!existe && String(pv) !== String(gasto.prodId)) return alert('Selecciona un producto para reposición');
+                if (cv <= 0) return alert('La cantidad debe ser mayor a cero');
+            } else if (!document.getElementById('edit-gasto-concepto').value) {
+                return alert('Ingresa un concepto del gasto');
+            }
+
             // Revertir efecto anterior en caja
             const montoAntiguo = gasto.monto !== undefined ? gasto.monto : (gasto.montoTotal || 0);
             const metodoAntiguo = gasto.metodo || gasto.metodoPago || 'Efectivo';
@@ -2573,13 +2697,17 @@
                 const cant = parseInt(document.getElementById('edit-gasto-cantidad-stock').value) || 0;
                 const prod = DB.inventario.find(p => p.id === prodId);
 
-                if (!prod) return alert('Selecciona un producto para reposición');
-                if (cant <= 0) return alert('La cantidad debe ser mayor a cero');
-
-                prod.cantidad += cant;
-                nuevoConcepto = `Compra Stock: ${prod.nombre} (+${cant})`;
-                nuevoProdId = prod.id;
-                nuevaCantStock = cant;
+                if (!prod) {
+                    // El producto ya no está en el inventario: se conserva la compra sin tocar el stock
+                    nuevoConcepto = gasto.concepto;
+                    nuevoProdId = gasto.prodId;
+                    nuevaCantStock = cant;
+                } else {
+                    prod.cantidad += cant;
+                    nuevoConcepto = `Compra Stock: ${prod.nombre} (+${cant})`;
+                    nuevoProdId = prod.id;
+                    nuevaCantStock = cant;
+                }
             } else {
                 nuevoConcepto = document.getElementById('edit-gasto-concepto').value;
                 if (!nuevoConcepto) return alert('Ingresa un concepto del gasto');
@@ -2660,8 +2788,7 @@
             const tbodyVentas = document.getElementById('tabla-historial-ventas');
             const tbodyGastos = document.getElementById('tabla-historial-gastos');
 
-            tbodyVentas.innerHTML = '';
-            tbodyGastos.innerHTML = '';
+            let htmlVentas = '', htmlGastos = '';
 
             const ventasFiltradas = DB.ventas.filter(v => {
                 const f = v.fecha || v.isoFecha || '';
@@ -2681,7 +2808,7 @@
                 const metodoVal = v.metodo || v.metodoPago || 'Efectivo';
                 const fechaMostrar = v.fecha ? (typeof v.fecha === 'string' && v.fecha.includes('T') ? new Date(v.fecha).toLocaleString('es-CO') : v.fecha) : 'Sin fecha';
 
-                tbodyVentas.innerHTML += `
+                htmlVentas += `
                     <tr>
                         <td style="font-size:0.75rem;">${fechaMostrar}</td>
                         <td>${prodNombre}${etiquetaHistorica}</td>
@@ -2703,7 +2830,7 @@
                 const metodoVal = g.metodo || g.metodoPago || 'Efectivo';
                 const fechaMostrar = g.fecha ? (typeof g.fecha === 'string' && g.fecha.includes('T') ? new Date(g.fecha).toLocaleString('es-CO') : g.fecha) : 'Sin fecha';
 
-                tbodyGastos.innerHTML += `
+                htmlGastos += `
                     <tr>
                         <td style="font-size:0.75rem;">${fechaMostrar}</td>
                         <td>${g.concepto || 'Gasto'}${g.historica ? '<span class="tag-historica">Otro mes</span>' : ''}</td>
@@ -2718,6 +2845,9 @@
                     </tr>
                 `;
             });
+
+            tbodyVentas.innerHTML = htmlVentas;
+            tbodyGastos.innerHTML = htmlGastos;
         }
 
         /* --- GRÁFICAS --- */
